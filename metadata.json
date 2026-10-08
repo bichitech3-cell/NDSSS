@@ -1,0 +1,6 @@
+{
+  "name": "FECOMAS School Management System",
+  "description": "Integrated FECOMAS School Management System portal for student registration, fee management, examination reports, and parent-teacher administration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
