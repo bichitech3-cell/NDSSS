@@ -8,6 +8,22 @@ import {
 } from '../data/mockData';
 import { Student, SubjectMark, ExamTimetableEntry, AuditLogEntry } from '../types';
 import {
+  downloadStudentPdf,
+  downloadStudentWordDoc,
+  downloadBulkCombinedPdf,
+  downloadBulkCombinedWordDoc,
+  downloadBulkZipArchive,
+  downloadBulkPdfZipArchive,
+  downloadSelectedCombinedPdf,
+  downloadSelectedCombinedWordDoc,
+  downloadSelectedZipArchive,
+  downloadSelectedPdfZipArchive,
+  printSingleReportSheet,
+  printBulkReportSheets,
+  printSelectedReportSheets,
+  getStudentSubjectsData
+} from '../services/reportSheetExportService';
+import {
   BarChart,
   Bar,
   XAxis,
@@ -37,6 +53,20 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
   const [subjectsData, setSubjectsData] = useState<SubjectMark[]>(FATIMA_SUBJECTS);
   const [timetableList, setTimetableList] = useState<ExamTimetableEntry[]>(MOCK_TIMETABLE);
   const [auditList, setAuditList] = useState<AuditLogEntry[]>(MOCK_AUDIT_LOGS);
+  const [exportNotification, setExportNotification] = useState<string | null>(null);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>(['1', '2']);
+  const [isBulkExportModalOpen, setIsBulkExportModalOpen] = useState<boolean>(false);
+  const [bulkExportFormat, setBulkExportFormat] = useState<'pdf-zip' | 'continuous-word' | 'continuous-pdf' | 'word-zip'>('pdf-zip');
+  const [bulkExportIncludeCsv, setBulkExportIncludeCsv] = useState<boolean>(true);
+  const [bulkExportIncludeManifest, setBulkExportIncludeManifest] = useState<boolean>(true);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+
+  // Helper to switch student and recalculate their specific terminal scores
+  const handleSelectStudentWithScores = (student: Student) => {
+    setSelectedStudent(student);
+    const studentMarks = getStudentSubjectsData(student, FATIMA_SUBJECTS);
+    setSubjectsData(studentMarks);
+  };
 
   // Search filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -145,6 +175,133 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
     const matchesClass = searchClass === 'All' || st.formClass.includes(searchClass) || searchClass.includes(st.formClass);
     return matchesQuery && matchesClass;
   });
+
+  // Bulk Selection Handlers & Selected Students
+  const handleToggleSelectStudent = (studentId: string) => {
+    setSelectedStudentIds((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+    );
+  };
+
+  const handleToggleSelectAllFiltered = () => {
+    const visibleIds = filteredStudents.map((st) => st.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedStudentIds.includes(id));
+    if (allSelected) {
+      setSelectedStudentIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedStudentIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleSelectAllStudents = () => {
+    setSelectedStudentIds(MOCK_STUDENTS.map((st) => st.id));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedStudentIds([]);
+  };
+
+  const selectedStudentsList = MOCK_STUDENTS.filter((st) => selectedStudentIds.includes(st.id));
+  const isAllFilteredSelected =
+    filteredStudents.length > 0 && filteredStudents.every((st) => selectedStudentIds.includes(st.id));
+  const isSomeFilteredSelected =
+    filteredStudents.some((st) => selectedStudentIds.includes(st.id)) && !isAllFilteredSelected;
+
+  // Bulk Download Selected Handlers
+  const handleDownloadSelectedPdfZip = async () => {
+    if (selectedStudentsList.length === 0) {
+      setExportNotification('Please select at least one student from the table using the checkboxes.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+    setIsExporting(true);
+    setExportNotification(`Generating official PDF report cards & bundling ${selectedStudentsList.length} candidate(s) into single ZIP file...`);
+    try {
+      await downloadSelectedPdfZipArchive(selectedStudentsList, searchClass, searchTerm + ' Term', {
+        includeCsv: bulkExportIncludeCsv,
+        includeManifest: bulkExportIncludeManifest
+      });
+      setExportNotification(`Successfully downloaded ZIP archive containing ${selectedStudentsList.length} official PDF report cards!`);
+      setTimeout(() => setExportNotification(null), 4000);
+    } catch (err) {
+      console.error(err);
+      setExportNotification('Failed to generate PDF ZIP archive. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDownloadSelectedCombinedPdf = () => {
+    if (selectedStudentsList.length === 0) {
+      setExportNotification('Please select at least one student from the table using the checkboxes.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+    setExportNotification(`Generating continuous multi-page PDF document for ${selectedStudentsList.length} selected candidate(s)...`);
+    downloadSelectedCombinedPdf(selectedStudentsList, searchClass, searchTerm + ' Term');
+    setTimeout(() => setExportNotification(null), 3500);
+  };
+
+  const handleDownloadSelectedWord = () => {
+    if (selectedStudentsList.length === 0) {
+      setExportNotification('Please select at least one student from the table using the checkboxes.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+    setExportNotification(`Generating continuous Microsoft Word document bundling ${selectedStudentsList.length} selected report sheet(s)...`);
+    downloadSelectedCombinedWordDoc(selectedStudentsList, searchClass, searchTerm + ' Term');
+    setTimeout(() => setExportNotification(null), 3500);
+  };
+
+  const handleDownloadSelectedZip = async () => {
+    if (selectedStudentsList.length === 0) {
+      setExportNotification('Please select at least one student from the table using the checkboxes.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+    setIsExporting(true);
+    setExportNotification(`Bundling ${selectedStudentsList.length} selected report sheet(s) into single Word ZIP archive...`);
+    try {
+      await downloadSelectedZipArchive(selectedStudentsList, searchClass, searchTerm + ' Term', {
+        includeCsv: bulkExportIncludeCsv,
+        includeManifest: bulkExportIncludeManifest
+      });
+      setExportNotification(`Successfully downloaded ZIP archive containing ${selectedStudentsList.length} Word report sheets!`);
+      setTimeout(() => setExportNotification(null), 4000);
+    } catch (err) {
+      console.error(err);
+      setExportNotification('Failed to generate Word ZIP archive. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExecuteBulkExportModal = async () => {
+    if (selectedStudentsList.length === 0) {
+      setExportNotification('Please select at least one student from the table using the checkboxes.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+    if (bulkExportFormat === 'pdf-zip') {
+      await handleDownloadSelectedPdfZip();
+    } else if (bulkExportFormat === 'continuous-word') {
+      handleDownloadSelectedWord();
+    } else if (bulkExportFormat === 'continuous-pdf') {
+      handleDownloadSelectedCombinedPdf();
+    } else if (bulkExportFormat === 'word-zip') {
+      await handleDownloadSelectedZip();
+    }
+    setIsBulkExportModalOpen(false);
+  };
+
+  const handlePrintSelected = () => {
+    if (selectedStudentsList.length === 0) {
+      setExportNotification('Please select at least one student from the table using the checkboxes.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+    printSelectedReportSheets(selectedStudentsList);
+  };
 
   // Calculate totals and statistics
   const totalMarksSum = subjectsData.reduce((acc, curr) => acc + curr.termTotal, 0);
@@ -523,11 +680,167 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
               </div>
             </div>
 
-            {/* Candidates Table */}
+            {/* Bulk Selection and Download Action Bar */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-inner">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2 bg-slate-900 border border-slate-700/60 rounded-lg px-2.5 py-1.5">
+                  <input
+                    type="checkbox"
+                    id="master-select-checkbox"
+                    checked={isAllFilteredSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isSomeFilteredSelected;
+                    }}
+                    onChange={handleToggleSelectAllFiltered}
+                    className="w-4 h-4 rounded text-emerald-500 bg-slate-950 border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                  />
+                  <label htmlFor="master-select-checkbox" className="text-xs font-bold text-slate-200 cursor-pointer select-none">
+                    Select All Visible ({filteredStudents.length})
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className={`px-2.5 py-1 rounded-full font-bold text-[11px] border ${
+                    selectedStudentsList.length > 0
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}>
+                    <i className="fas fa-check-square mr-1"></i>
+                    {selectedStudentsList.length} Selected
+                  </span>
+                  {selectedStudentsList.length > 0 && (
+                    <button
+                      onClick={handleClearSelection}
+                      className="px-2 py-1 text-[11px] text-slate-400 hover:text-rose-400 font-semibold cursor-pointer underline transition-colors"
+                      title="Clear current selection"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  {selectedStudentsList.length < MOCK_STUDENTS.length && (
+                    <button
+                      onClick={handleSelectAllStudents}
+                      className="px-2 py-1 text-[11px] text-slate-400 hover:text-emerald-400 font-semibold cursor-pointer underline transition-colors"
+                      title="Select all students in class"
+                    >
+                      Select All Class ({MOCK_STUDENTS.length})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons for Selected Students */}
+              <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+                {/* Primary Bulk Export Modal Trigger */}
+                <button
+                  onClick={() => setIsBulkExportModalOpen(true)}
+                  disabled={selectedStudentsList.length === 0}
+                  className={`px-3.5 py-1.5 text-xs font-black rounded-xl transition-all flex items-center gap-2 shadow-md cursor-pointer ${
+                    selectedStudentsList.length > 0
+                      ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-emerald-600/30 active:scale-95 ring-1 ring-emerald-400/40'
+                      : 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-800'
+                  }`}
+                  title="Open Bulk Export wizard with PDF ZIP, Word, and Continuous options"
+                >
+                  <i className="fas fa-file-export text-emerald-200"></i>
+                  <span>Bulk Export ({selectedStudentsList.length})</span>
+                  <span className="text-[10px] bg-black/30 px-1.5 py-0.5 rounded-full font-mono">Options</span>
+                </button>
+
+                {/* Direct ZIP (PDFs) Quick Action */}
+                <button
+                  onClick={handleDownloadSelectedPdfZip}
+                  disabled={selectedStudentsList.length === 0 || isExporting}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
+                    selectedStudentsList.length > 0
+                      ? 'bg-rose-700 hover:bg-rose-600 text-white cursor-pointer shadow-rose-700/20 active:scale-95'
+                      : 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-800'
+                  }`}
+                  title="Bundle selected reports into a single ZIP file containing individual official PDF reports"
+                >
+                  <i className="fas fa-file-pdf text-rose-200"></i>
+                  <span>ZIP (PDFs)</span>
+                </button>
+
+                {/* Direct Continuous Word Quick Action */}
+                <button
+                  onClick={handleDownloadSelectedWord}
+                  disabled={selectedStudentsList.length === 0}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
+                    selectedStudentsList.length > 0
+                      ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-blue-600/20 active:scale-95'
+                      : 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-800'
+                  }`}
+                  title="Download selected student reports bundled into a single continuous Microsoft Word (.doc) document"
+                >
+                  <i className="fas fa-file-word text-blue-200"></i>
+                  <span>Continuous Word</span>
+                </button>
+
+                {/* Direct Continuous Multi-Page PDF Quick Action */}
+                <button
+                  onClick={handleDownloadSelectedCombinedPdf}
+                  disabled={selectedStudentsList.length === 0}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
+                    selectedStudentsList.length > 0
+                      ? 'bg-teal-700 hover:bg-teal-600 text-white cursor-pointer shadow-teal-700/20 active:scale-95'
+                      : 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-800'
+                  }`}
+                  title="Download all selected student reports in a single continuous multi-page PDF"
+                >
+                  <i className="fas fa-layer-group text-teal-200"></i>
+                  <span>Continuous PDF</span>
+                </button>
+
+                {/* Direct ZIP (Word) Quick Action */}
+                <button
+                  onClick={handleDownloadSelectedZip}
+                  disabled={selectedStudentsList.length === 0 || isExporting}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
+                    selectedStudentsList.length > 0
+                      ? 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer shadow-indigo-600/20 active:scale-95'
+                      : 'bg-slate-800/80 text-slate-500 cursor-not-allowed border border-slate-800'
+                  }`}
+                  title="Download selected student reports bundled into a single ZIP file containing individual Word documents"
+                >
+                  <i className="fas fa-file-archive text-indigo-200"></i>
+                  <span>ZIP (Word)</span>
+                </button>
+
+                {/* Direct Print Quick Action */}
+                <button
+                  onClick={handlePrintSelected}
+                  disabled={selectedStudentsList.length === 0}
+                  className={`px-2.5 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+                    selectedStudentsList.length > 0
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer border border-slate-700 active:scale-95'
+                      : 'bg-slate-800/50 text-slate-500 cursor-not-allowed border border-slate-800'
+                  }`}
+                  title="Print all selected student reports"
+                >
+                  <i className="fas fa-print"></i>
+                  <span className="hidden sm:inline">Print Selected</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Candidates Table with Bulk Selection Checkbox */}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px]">
+                    <th className="py-3 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isAllFilteredSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = isSomeFilteredSelected;
+                        }}
+                        onChange={handleToggleSelectAllFiltered}
+                        className="w-4 h-4 rounded text-emerald-500 bg-slate-950 border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                        title={isAllFilteredSelected ? 'Deselect all visible candidates' : 'Select all visible candidates'}
+                      />
+                    </th>
                     <th className="py-3 px-3">Adm No</th>
                     <th className="py-3 px-3">Candidate</th>
                     <th className="py-3 px-3">Class & Arm</th>
@@ -538,63 +851,116 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {filteredStudents.map((st) => (
-                    <tr key={st.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="py-3 px-3 font-mono font-bold text-emerald-400">{st.studentNo}</td>
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-2.5">
-                          <img
-                            src={st.avatarUrl}
-                            alt={st.firstName}
-                            className="w-8 h-8 rounded-full object-cover border border-slate-700"
+                  {filteredStudents.map((st) => {
+                    const isSelected = selectedStudentIds.includes(st.id);
+                    return (
+                      <tr
+                        key={st.id}
+                        className={`transition-colors ${
+                          isSelected
+                            ? 'bg-emerald-950/40 hover:bg-emerald-950/50 border-l-2 border-emerald-500'
+                            : 'hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <td className="py-3 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectStudent(st.id)}
+                            className="w-4 h-4 rounded text-emerald-500 bg-slate-950 border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                            title={`Select ${st.firstName} ${st.lastName} for bulk download`}
                           />
-                          <div>
-                            <p className="font-bold text-white uppercase text-xs">{st.lastName}, {st.firstName}</p>
-                            <p className="text-[10px] text-slate-400">Age: {st.age || 16} &bull; Sponsor: {st.sponsor || 'Self'}</p>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-emerald-400">{st.studentNo}</td>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <img
+                              src={st.avatarUrl}
+                              alt={st.firstName}
+                              className="w-8 h-8 rounded-full object-cover border border-slate-700"
+                            />
+                            <div>
+                              <p className="font-bold text-white uppercase text-xs">{st.lastName}, {st.firstName}</p>
+                              <p className="text-[10px] text-slate-400">Age: {st.age || 16} &bull; Sponsor: {st.sponsor || 'Self'}</p>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-slate-200">
-                        <span className="font-bold">{st.formClass}</span>
-                        <span className="text-[10px] text-slate-400 block">{st.arm || 'Science'}</span>
-                      </td>
-                      <td className="py-3 px-3 font-medium text-slate-300">{st.house || 'Dalet'}</td>
-                      <td className="py-3 px-3">
-                        <span className="font-mono font-bold text-emerald-400">
-                          {st.studentNo === '2413' ? '85.00%' : '78.50%'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          Rank {st.positionInClass || 1} of {st.noInClass || 68}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setSelectedStudent(st);
-                              setActiveTab('scores');
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
-                            title="Edit Continuous Assessment Marks"
-                          >
-                            <i className="fas fa-edit mr-1"></i> Marks
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedStudent(st);
-                              setActiveTab('dossier');
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px] cursor-pointer"
-                            title="View Official Terminal Dossier"
-                          >
-                            <i className="fas fa-file-alt mr-1"></i> Dossier
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-3 px-3 text-slate-200">
+                          <span className="font-bold">{st.formClass}</span>
+                          <span className="text-[10px] text-slate-400 block">{st.arm || 'Science'}</span>
+                        </td>
+                        <td className="py-3 px-3 font-medium text-slate-300">{st.house || 'Dalet'}</td>
+                        <td className="py-3 px-3">
+                          <span className="font-mono font-bold text-emerald-400">
+                            {st.studentNo === '2413' ? '85.00%' : '78.50%'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            Rank {st.positionInClass || 1} of {st.noInClass || 68}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => {
+                                handleSelectStudentWithScores(st);
+                                setActiveTab('scores');
+                              }}
+                              className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer"
+                              title="Edit Continuous Assessment Marks"
+                            >
+                              <i className="fas fa-edit mr-1"></i> Marks
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleSelectStudentWithScores(st);
+                                setActiveTab('dossier');
+                              }}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[10px] cursor-pointer"
+                              title="View Official Terminal Dossier"
+                            >
+                              <i className="fas fa-eye mr-1"></i> Dossier
+                            </button>
+                            <button
+                              onClick={() => {
+                                const marks = getStudentSubjectsData(st, FATIMA_SUBJECTS);
+                                setExportNotification(`Downloading official PDF report card for ${st.firstName} ${st.lastName}...`);
+                                downloadStudentPdf(st, marks);
+                                setTimeout(() => setExportNotification(null), 3000);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-bold text-[10px] cursor-pointer shadow-sm shadow-rose-700/20"
+                              title="Download Official PDF Report Card (.pdf)"
+                            >
+                              <i className="fas fa-file-pdf mr-1"></i> PDF
+                            </button>
+                            <button
+                              onClick={() => {
+                                const marks = getStudentSubjectsData(st, FATIMA_SUBJECTS);
+                                setExportNotification(`Downloading Word report sheet for ${st.firstName} ${st.lastName}...`);
+                                downloadStudentWordDoc(st, marks);
+                                setTimeout(() => setExportNotification(null), 3000);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-blue-700 hover:bg-blue-600 text-white font-bold text-[10px] cursor-pointer"
+                              title="Download Microsoft Word Report Sheet (.doc)"
+                            >
+                              <i className="fas fa-file-word mr-1"></i> Word
+                            </button>
+                            <button
+                              onClick={() => {
+                                const marks = getStudentSubjectsData(st, FATIMA_SUBJECTS);
+                                printSingleReportSheet(st, marks);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold text-[10px] cursor-pointer"
+                              title="Print Official Report Sheet"
+                            >
+                              <i className="fas fa-print"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -815,18 +1181,73 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                   Comprehensive performance broadsheet &bull; Session: 2020/21 &bull; Second Term &bull; Form Candidates: 68
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={exportBroadsheetCSV}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
                 >
-                  <i className="fas fa-file-csv"></i> Export Broadsheet (CSV)
+                  <i className="fas fa-file-csv"></i> CSV Broadsheet
+                </button>
+
+                {/* Bulk Export Wizard Modal Trigger */}
+                <button
+                  onClick={() => setIsBulkExportModalOpen(true)}
+                  disabled={selectedStudentsList.length === 0}
+                  className={`px-3 py-1.5 text-xs font-black rounded-xl cursor-pointer transition-all flex items-center gap-1.5 shadow-md ${
+                    selectedStudentsList.length > 0
+                      ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-emerald-600/30 ring-1 ring-emerald-400/40'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                  }`}
+                  title="Open Bulk Export wizard for selected students"
+                >
+                  <i className="fas fa-file-export"></i> Bulk Export ({selectedStudentsList.length} Selected)
+                </button>
+
+                {selectedStudentsList.length > 0 && (
+                  <>
+                    <button
+                      onClick={handleDownloadSelectedPdfZip}
+                      className="px-3 py-1.5 bg-rose-700 hover:bg-rose-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-md shadow-rose-700/20"
+                      title="Download ZIP archive of official PDF reports for selected students"
+                    >
+                      <i className="fas fa-file-pdf"></i> ZIP (PDFs)
+                    </button>
+                    <button
+                      onClick={handleDownloadSelectedWord}
+                      className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-md shadow-blue-700/20"
+                      title="Download continuous Word document for selected students"
+                    >
+                      <i className="fas fa-file-word"></i> Word ({selectedStudentsList.length})
+                    </button>
+                  </>
+                )}
+
+                <button
+                  onClick={async () => {
+                    setExportNotification(`Packaging all ${filteredStudents.length} candidate official PDF report sheets into ZIP archive...`);
+                    await downloadBulkPdfZipArchive(filteredStudents, searchClass, searchTerm + ' Term');
+                    setExportNotification(null);
+                  }}
+                  className="px-3 py-1.5 bg-rose-800 hover:bg-rose-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-md shadow-rose-800/20"
+                  title="Download all class students as individual PDF reports in a single ZIP file"
+                >
+                  <i className="fas fa-file-pdf"></i> Bulk ZIP (PDFs - All)
                 </button>
                 <button
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    setExportNotification(`Generating combined Microsoft Word file for all ${filteredStudents.length} candidates in ${searchClass}...`);
+                    downloadBulkCombinedWordDoc(filteredStudents, searchClass, searchTerm + ' Term');
+                    setTimeout(() => setExportNotification(null), 3500);
+                  }}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-md shadow-blue-600/20"
+                >
+                  <i className="fas fa-file-word"></i> Bulk Word (All)
+                </button>
+                <button
+                  onClick={() => printBulkReportSheets(filteredStudents)}
                   className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
                 >
-                  <i className="fas fa-print"></i> Print Broadsheet
+                  <i className="fas fa-print"></i> Bulk Print All
                 </button>
               </div>
             </div>
@@ -836,6 +1257,18 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
               <table className="w-full text-left text-[11px] border border-slate-800">
                 <thead className="bg-slate-950 text-slate-300 font-bold uppercase text-[9px] border-b border-slate-800">
                   <tr>
+                    <th className="py-2 px-2 w-8 text-center border-r border-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={isAllFilteredSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = isSomeFilteredSelected;
+                        }}
+                        onChange={handleToggleSelectAllFiltered}
+                        className="w-3.5 h-3.5 rounded text-emerald-500 bg-slate-950 border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                        title="Select all"
+                      />
+                    </th>
                     <th className="py-2 px-2 border-r border-slate-800">Adm No</th>
                     <th className="py-2 px-2 border-r border-slate-800">Candidate Name</th>
                     {subjectsData.map((s, idx) => (
@@ -850,36 +1283,55 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {MOCK_STUDENTS.map((st, i) => (
-                    <tr key={st.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="py-2 px-2 font-mono font-bold text-emerald-400 border-r border-slate-800">{st.studentNo}</td>
-                      <td className="py-2 px-2 font-bold text-white uppercase border-r border-slate-800 whitespace-nowrap">
-                        {st.lastName}, {st.firstName}
-                      </td>
-                      {subjectsData.map((s, idx) => {
-                        const score = st.studentNo === '2413' ? s.termTotal : Math.max(50, s.termTotal - (i * 3));
-                        return (
-                          <td key={idx} className="py-2 px-1 text-center font-mono border-r border-slate-800">
-                            {score}
-                          </td>
-                        );
-                      })}
-                      <td className="py-2 px-2 text-center font-mono font-bold text-emerald-400 border-r border-slate-800">
-                        {st.studentNo === '2413' ? totalMarksSum : totalMarksSum - (i * 24)}
-                      </td>
-                      <td className="py-2 px-2 text-center font-mono font-bold border-r border-slate-800">
-                        {st.studentNo === '2413' ? averagePercentage : (Number(averagePercentage) - (i * 2.2)).toFixed(2)}%
-                      </td>
-                      <td className="py-2 px-2 text-center font-bold text-slate-200 border-r border-slate-800">
-                        {i + 1}
-                      </td>
-                      <td className="py-2 px-2 text-center">
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          PASSED
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {MOCK_STUDENTS.map((st, i) => {
+                    const isSelected = selectedStudentIds.includes(st.id);
+                    return (
+                      <tr
+                        key={st.id}
+                        className={`transition-colors ${
+                          isSelected
+                            ? 'bg-emerald-950/40 hover:bg-emerald-950/50'
+                            : 'hover:bg-slate-800/30'
+                        }`}
+                      >
+                        <td className="py-2 px-2 text-center border-r border-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectStudent(st.id)}
+                            className="w-3.5 h-3.5 rounded text-emerald-500 bg-slate-950 border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                            title={`Select ${st.firstName} ${st.lastName}`}
+                          />
+                        </td>
+                        <td className="py-2 px-2 font-mono font-bold text-emerald-400 border-r border-slate-800">{st.studentNo}</td>
+                        <td className="py-2 px-2 font-bold text-white uppercase border-r border-slate-800 whitespace-nowrap">
+                          {st.lastName}, {st.firstName}
+                        </td>
+                        {subjectsData.map((s, idx) => {
+                          const score = st.studentNo === '2413' ? s.termTotal : Math.max(50, s.termTotal - (i * 3));
+                          return (
+                            <td key={idx} className="py-2 px-1 text-center font-mono border-r border-slate-800">
+                              {score}
+                            </td>
+                          );
+                        })}
+                        <td className="py-2 px-2 text-center font-mono font-bold text-emerald-400 border-r border-slate-800">
+                          {st.studentNo === '2413' ? totalMarksSum : totalMarksSum - (i * 24)}
+                        </td>
+                        <td className="py-2 px-2 text-center font-mono font-bold border-r border-slate-800">
+                          {st.studentNo === '2413' ? averagePercentage : (Number(averagePercentage) - (i * 2.2)).toFixed(2)}%
+                        </td>
+                        <td className="py-2 px-2 text-center font-bold text-slate-200 border-r border-slate-800">
+                          {i + 1}
+                        </td>
+                        <td className="py-2 px-2 text-center">
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            PASSED
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -889,21 +1341,157 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
         {/* TAB 5: AUTHENTIC NIGERIAN DEFENCE ACADEMY CONTINUOUS ASSESSMENT DOSSIER */}
         {activeTab === 'dossier' && (
           <div className="space-y-6 animate-fade-in text-left">
-            <div className="flex justify-between items-center bg-slate-900 border border-slate-800 rounded-2xl p-4">
-              <div>
-                <h4 className="font-black text-white text-base">Continuous Assessment Dossier</h4>
-                <p className="text-xs text-slate-400">Official Terminal Report card for Nigerian Defence Academy Staff Secondary School</p>
+            {/* Download & Print Action Toolbar */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3 no-print">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-black text-white text-base">Continuous Assessment Dossier & Terminal Report</h4>
+                    <span className="text-[10px] bg-blue-500/20 text-blue-400 font-bold px-2 py-0.5 rounded border border-blue-500/30">
+                      MS WORD & PRINT READY
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Official terminal report card formatted with Nigerian Defence Academy secondary school grading standards
+                  </p>
+                </div>
+
+                {/* Candidate Selector directly on Dossier page */}
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <span className="text-xs text-slate-400 font-semibold whitespace-nowrap">Candidate:</span>
+                  <select
+                    value={selectedStudent.id}
+                    onChange={(e) => {
+                      const found = MOCK_STUDENTS.find(s => s.id === e.target.value);
+                      if (found) handleSelectStudentWithScores(found);
+                    }}
+                    className="bg-slate-950 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-2 outline-none focus:border-emerald-500 w-full md:w-64"
+                  >
+                    {MOCK_STUDENTS.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.studentNo} - {st.lastName}, {st.firstName} ({st.formClass})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md"
-              >
-                <i className="fas fa-print"></i> Print Terminal Dossier
-              </button>
+
+              {/* Action Buttons Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-800">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Single Student PDF Download */}
+                  <button
+                    onClick={() => {
+                      setExportNotification(`Generating official PDF report card for ${selectedStudent.firstName} ${selectedStudent.lastName}...`);
+                      downloadStudentPdf(selectedStudent, subjectsData);
+                      setTimeout(() => setExportNotification(null), 3000);
+                    }}
+                    className="px-3.5 py-2 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-rose-600/20 transition-all"
+                    title="Download active student's official PDF dossier (.pdf)"
+                  >
+                    <i className="fas fa-file-pdf text-sm text-rose-200"></i>
+                    <span>Download PDF (.pdf)</span>
+                  </button>
+
+                  {/* Single Student Microsoft Word Download */}
+                  <button
+                    onClick={() => {
+                      setExportNotification(`Generating Microsoft Word (.doc) for ${selectedStudent.firstName} ${selectedStudent.lastName}...`);
+                      downloadStudentWordDoc(selectedStudent, subjectsData);
+                      setTimeout(() => setExportNotification(null), 3000);
+                    }}
+                    className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-blue-600/20 transition-all"
+                    title="Download active student's report sheet as Microsoft Word Document (.doc)"
+                  >
+                    <i className="fas fa-file-word text-sm text-blue-200"></i>
+                    <span>Download Word (.doc)</span>
+                  </button>
+
+                  {/* Bulk Download as PDF ZIP package */}
+                  <button
+                    onClick={async () => {
+                      setExportNotification(`Packaging all ${filteredStudents.length} student official PDF report sheets into ZIP archive...`);
+                      await downloadBulkPdfZipArchive(filteredStudents, searchClass, searchTerm + ' Term');
+                      setExportNotification(null);
+                    }}
+                    className="px-3.5 py-2 bg-rose-900/80 hover:bg-rose-800 border border-rose-700 text-rose-100 font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                    title="Download individual official PDF report cards for every student in a ZIP file"
+                  >
+                    <i className="fas fa-file-pdf text-sm text-rose-300"></i>
+                    <span>Bulk PDF ZIP</span>
+                  </button>
+
+                  {/* Bulk Download as Combined Word Document */}
+                  <button
+                    onClick={() => {
+                      setExportNotification(`Generating combined Microsoft Word file for all ${filteredStudents.length} candidates in ${searchClass}...`);
+                      downloadBulkCombinedWordDoc(filteredStudents, searchClass, searchTerm + ' Term');
+                      setTimeout(() => setExportNotification(null), 3500);
+                    }}
+                    className="px-3.5 py-2 bg-blue-900/80 hover:bg-blue-800 border border-blue-700 text-blue-100 font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                    title="Download all students in one combined Microsoft Word file with section breaks"
+                  >
+                    <i className="fas fa-layer-group text-sm text-blue-300"></i>
+                    <span>Bulk Word</span>
+                  </button>
+
+                  {/* Bulk Download as ZIP package */}
+                  <button
+                    onClick={async () => {
+                      setExportNotification(`Zipping all ${filteredStudents.length} student Word report sheets into an archive package...`);
+                      await downloadBulkZipArchive(filteredStudents, searchClass, searchTerm + ' Term');
+                      setExportNotification(null);
+                    }}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                    title="Download individual Word report sheets for every student in a ZIP file"
+                  >
+                    <i className="fas fa-file-archive text-sm text-amber-400"></i>
+                    <span>Word ZIP Archive</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Single Student Print */}
+                  <button
+                    onClick={() => printSingleReportSheet(selectedStudent, subjectsData)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20 transition-all"
+                    title="Print clean official report card on paper"
+                  >
+                    <i className="fas fa-print"></i>
+                    <span>Print Dossier</span>
+                  </button>
+
+                  {/* Bulk Print All Students */}
+                  <button
+                    onClick={() => printBulkReportSheets(filteredStudents)}
+                    className="px-3.5 py-2 bg-teal-800 hover:bg-teal-700 border border-teal-600 text-teal-100 font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                    title="Print report sheets for all candidates with automatic page breaks"
+                  >
+                    <i className="fas fa-copy"></i>
+                    <span>Bulk Print All ({filteredStudents.length})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Notification */}
+              {exportNotification && (
+                <div className="bg-emerald-950/80 border border-emerald-500/50 rounded-xl px-3.5 py-2 text-xs text-emerald-200 flex items-center justify-between animate-fadeIn">
+                  <div className="flex items-center gap-2">
+                    <i className="fas fa-spinner fa-spin text-emerald-400"></i>
+                    <span>{exportNotification}</span>
+                  </div>
+                  <button
+                    onClick={() => setExportNotification(null)}
+                    className="text-emerald-400 hover:text-white font-bold"
+                  >
+                    &times;
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Exactly matching uploaded report sheet image */}
-            <div className="bg-white text-slate-900 rounded-2xl p-6 sm:p-8 shadow-2xl border border-slate-300 max-w-4xl mx-auto">
+            <div className="printable-dossier bg-white text-slate-900 rounded-2xl p-6 sm:p-8 shadow-2xl border border-slate-300 max-w-4xl mx-auto">
               {/* Header section matching exact format */}
               <div className="border-b-2 border-slate-900 pb-2 mb-3 text-center">
                 <div className="flex items-center justify-between gap-3">
@@ -1263,6 +1851,287 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
           </span>
         </div>
       </footer>
+
+      {/* ========================================================================= */}
+      {/* BULK EXPORT MODAL DIALOG (PDF ZIP / Continuous Word / Continuous PDF)     */}
+      {/* ========================================================================= */}
+      {isBulkExportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl relative text-left my-8 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-xl shadow-inner">
+                  <i className="fas fa-file-export"></i>
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white flex items-center gap-2">
+                    Bulk Export Student Report Cards
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
+                      {selectedStudentsList.length} Selected
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Official terminal continuous assessment dossiers for Nigerian Defence Academy Staff Secondary School
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBulkExportModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center font-bold text-lg cursor-pointer transition-colors"
+                title="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body (Scrollable) */}
+            <div className="overflow-y-auto py-4 space-y-5 pr-1 text-xs">
+              {/* Selected Candidates Summary Banner */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="font-bold text-slate-300 flex items-center gap-2 text-xs">
+                    <i className="fas fa-user-graduate text-emerald-400"></i>
+                    Selected Candidates for Export ({selectedStudentsList.length})
+                  </span>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <button
+                      onClick={handleToggleSelectAllFiltered}
+                      className="text-emerald-400 hover:underline font-bold cursor-pointer"
+                    >
+                      {isAllFilteredSelected ? 'Deselect Visible' : 'Select All Visible'}
+                    </button>
+                    <span className="text-slate-600">&bull;</span>
+                    <button
+                      onClick={handleClearSelection}
+                      className="text-rose-400 hover:underline font-bold cursor-pointer"
+                    >
+                      Clear Selection
+                    </button>
+                  </div>
+                </div>
+
+                {/* Candidate Chips List */}
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                  {selectedStudentsList.length === 0 ? (
+                    <span className="text-slate-500 italic p-1 text-[11px]">
+                      No candidates currently selected. Please check student boxes to export.
+                    </span>
+                  ) : (
+                    selectedStudentsList.map((st) => (
+                      <span
+                        key={st.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700/80 text-[11px] text-slate-200"
+                      >
+                        <span className="font-mono font-bold text-emerald-400">{st.studentNo}</span>
+                        <span>{st.lastName}, {st.firstName}</span>
+                        <button
+                          onClick={() => handleToggleSelectStudent(st.id)}
+                          className="text-slate-400 hover:text-rose-400 ml-1 font-bold text-xs cursor-pointer"
+                          title="Remove from export batch"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Format Selection Cards */}
+              <div className="space-y-2.5">
+                <label className="text-xs font-black text-slate-200 uppercase tracking-wider block">
+                  Select Export Format:
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Option 1: ZIP of Individual PDFs (RECOMMENDED) */}
+                  <div
+                    onClick={() => setBulkExportFormat('pdf-zip')}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all relative ${
+                      bulkExportFormat === 'pdf-zip'
+                        ? 'bg-rose-950/40 border-rose-500 shadow-md shadow-rose-950/50 ring-1 ring-rose-500/50'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center text-base shrink-0">
+                        <i className="fas fa-file-pdf"></i>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-white text-xs">ZIP Archive of PDF Reports</h4>
+                          <span className="text-[9px] bg-rose-500/30 text-rose-200 font-extrabold px-1.5 py-0.5 rounded border border-rose-500/40">
+                            OFFICIAL
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-snug">
+                          Bundles individual official vector PDF report cards for each candidate into a single .zip archive.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Option 2: Continuous Microsoft Word Document */}
+                  <div
+                    onClick={() => setBulkExportFormat('continuous-word')}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all relative ${
+                      bulkExportFormat === 'continuous-word'
+                        ? 'bg-blue-950/40 border-blue-500 shadow-md shadow-blue-950/50 ring-1 ring-blue-500/50'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center text-base shrink-0">
+                        <i className="fas fa-file-word"></i>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-white text-xs">Continuous Word Document</h4>
+                          <span className="text-[9px] bg-blue-500/30 text-blue-200 font-extrabold px-1.5 py-0.5 rounded border border-blue-500/40">
+                            EDITABLE
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-snug">
+                          All selected student report cards in ONE continuous Microsoft Word file (.doc) with page breaks.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Option 3: Continuous Multi-Page PDF Document */}
+                  <div
+                    onClick={() => setBulkExportFormat('continuous-pdf')}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all relative ${
+                      bulkExportFormat === 'continuous-pdf'
+                        ? 'bg-teal-950/40 border-teal-500 shadow-md shadow-teal-950/50 ring-1 ring-teal-500/50'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-400 border border-teal-500/30 flex items-center justify-center text-base shrink-0">
+                        <i className="fas fa-layer-group"></i>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-white text-xs">Continuous Multi-Page PDF</h4>
+                          <span className="text-[9px] bg-teal-500/30 text-teal-200 font-extrabold px-1.5 py-0.5 rounded border border-teal-500/40">
+                            PRINT READY
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-snug">
+                          Single multi-page PDF document containing all selected student dossiers (1 page per candidate).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Option 4: ZIP of Individual Word Documents */}
+                  <div
+                    onClick={() => setBulkExportFormat('word-zip')}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all relative ${
+                      bulkExportFormat === 'word-zip'
+                        ? 'bg-indigo-950/40 border-indigo-500 shadow-md shadow-indigo-950/50 ring-1 ring-indigo-500/50'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center text-base shrink-0">
+                        <i className="fas fa-file-archive"></i>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-white text-xs">ZIP Archive of Word Docs</h4>
+                          <span className="text-[9px] bg-indigo-500/30 text-indigo-200 font-extrabold px-1.5 py-0.5 rounded border border-indigo-500/40">
+                            INDIVIDUAL DOCS
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-snug">
+                          Individual Microsoft Word (.doc) dossiers for each candidate bundled into a single ZIP file.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Package Options */}
+              <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-3.5 space-y-2">
+                <span className="font-bold text-slate-300 text-xs block">Archive Options:</span>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bulkExportIncludeCsv}
+                      onChange={(e) => setBulkExportIncludeCsv(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-500 bg-slate-900 border-slate-700 focus:ring-emerald-500 accent-emerald-500"
+                    />
+                    <span>Include Broadsheet CSV Summary</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bulkExportIncludeManifest}
+                      onChange={(e) => setBulkExportIncludeManifest(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-500 bg-slate-900 border-slate-700 focus:ring-emerald-500 accent-emerald-500"
+                    />
+                    <span>Include Examination Department Manifest (MANIFEST.txt)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={handlePrintSelected}
+                disabled={selectedStudentsList.length === 0}
+                className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer border border-slate-700 transition-colors"
+                title="Print selected candidate dossiers directly"
+              >
+                <i className="fas fa-print"></i>
+                <span>Print Selected Directly</span>
+              </button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkExportModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExecuteBulkExportModal}
+                  disabled={selectedStudentsList.length === 0 || isExporting}
+                  className={`px-5 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer ${
+                    selectedStudentsList.length > 0 && !isExporting
+                      ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-emerald-600/30 active:scale-95'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                  }`}
+                >
+                  {isExporting ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin"></i>
+                      <span>Generating Archive...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-download"></i>
+                      <span>
+                        Download {bulkExportFormat === 'pdf-zip' ? 'PDF ZIP' : bulkExportFormat === 'continuous-word' ? 'Continuous Word' : bulkExportFormat === 'continuous-pdf' ? 'Continuous PDF' : 'Word ZIP'} ({selectedStudentsList.length})
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

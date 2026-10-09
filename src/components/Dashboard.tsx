@@ -1,18 +1,39 @@
 import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
-import { DEMO_SCHOOLS, MOCK_STUDENTS, MOCK_FEES, MOCK_ANNOUNCEMENTS } from '../data/mockData';
+import { DEMO_SCHOOLS, MOCK_STUDENTS, MOCK_FEES, MOCK_ANNOUNCEMENTS, FATIMA_SUBJECTS } from '../data/mockData';
 import { UserRole, Student, FeeTransaction, Announcement } from '../types';
 import { AddStudentModal } from './AddStudentModal';
+import { DepartmentAuthorizationView } from './DepartmentAuthorizationView';
+import { SYSTEM_USERS, UserAccount } from '../services/securityService';
+import {
+  downloadStudentWordDoc,
+  downloadBulkCombinedWordDoc,
+  downloadBulkZipArchive,
+  printSingleReportSheet,
+  printBulkReportSheets,
+  getStudentSubjectsData
+} from '../services/reportSheetExportService';
 
 interface DashboardProps {
   role: UserRole;
   username: string;
   onLogout: () => void;
   onOpenExamOfficer?: () => void;
+  onOpenBursar?: () => void;
+  onOpenPta?: () => void;
+  onOpenRbac?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ role, username, onLogout, onOpenExamOfficer }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'fees' | 'exams' | 'attendance' | 'broadcast'>('overview');
+export const Dashboard: React.FC<DashboardProps> = ({
+  role,
+  username,
+  onLogout,
+  onOpenExamOfficer,
+  onOpenBursar,
+  onOpenPta,
+  onOpenRbac
+}) => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'fees' | 'exams' | 'attendance' | 'broadcast' | 'rbac'>('overview');
   const [selectedSchool, setSelectedSchool] = useState(DEMO_SCHOOLS[0].code);
   const [searchStudent, setSearchStudent] = useState('');
   const [selectedForm, setSelectedForm] = useState('All');
@@ -24,6 +45,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, username, onLogout, 
   // Modal states
   const [viewingReportCardStudent, setViewingReportCardStudent] = useState<Student | null>(MOCK_STUDENTS[0]);
   const [viewingReceipt, setViewingReceipt] = useState<FeeTransaction | null>(null);
+  const [exportNotification, setExportNotification] = useState<string | null>(null);
   
   // Payment recording state
   const [paymentStudentId, setPaymentStudentId] = useState(MOCK_STUDENTS[1].id);
@@ -180,7 +202,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, username, onLogout, 
               { id: 'fees', label: 'Fees & Accounts', icon: 'fa-money-bill-wave' },
               { id: 'exams', label: 'Terminal Reports', icon: 'fa-award' },
               { id: 'attendance', label: 'Attendance Roll', icon: 'fa-clipboard-check' },
-              { id: 'broadcast', label: 'WhatsApp & SMS', icon: 'fa-paper-plane' }
+              { id: 'broadcast', label: 'WhatsApp & SMS', icon: 'fa-paper-plane' },
+              { id: 'rbac', label: 'Department RBAC & Security', icon: 'fa-shield-alt' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -201,8 +224,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, username, onLogout, 
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 shadow-sm transition-all cursor-pointer"
                 title="Open Dedicated Examination Officer Module"
               >
-                <i className="fas fa-shield-alt text-emerald-400"></i>
-                <span>Exam Officer Module</span>
+                <i className="fas fa-file-alt text-emerald-400"></i>
+                <span>Exam Officer</span>
+              </button>
+            )}
+            {onOpenBursar && (
+              <button
+                onClick={onOpenBursar}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300 shadow-sm transition-all cursor-pointer"
+                title="Open School Bursary & Treasury Module"
+              >
+                <i className="fas fa-university text-amber-400"></i>
+                <span>Bursar Portal</span>
+              </button>
+            )}
+            {onOpenPta && (
+              <button
+                onClick={onOpenPta}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap bg-teal-950/80 hover:bg-teal-900 border border-teal-500/40 text-teal-300 shadow-sm transition-all cursor-pointer"
+                title="Open PTA Financial Secretary Module"
+              >
+                <i className="fas fa-hand-holding-usd text-teal-400"></i>
+                <span>PTA Fin Sec</span>
               </button>
             )}
           </div>
@@ -710,9 +753,91 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, username, onLogout, 
               </div>
             </div>
 
-            {/* Authentic Printable Malawian Secondary School Report Card */}
+            {/* Quick Actions Bar for Word Export and Printing */}
             {viewingReportCardStudent && (
-              <div className="bg-white text-slate-900 rounded-2xl p-6 sm:p-8 shadow-2xl border border-slate-200 max-w-4xl mx-auto">
+              <div className="bg-slate-900 border border-slate-700/80 rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-3 no-print">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      const marks = getStudentSubjectsData(viewingReportCardStudent, FATIMA_SUBJECTS);
+                      setExportNotification(`Downloading Microsoft Word report sheet for ${viewingReportCardStudent.firstName}...`);
+                      downloadStudentWordDoc(viewingReportCardStudent, marks);
+                      setTimeout(() => setExportNotification(null), 3000);
+                    }}
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-blue-600/20 transition-all"
+                    title="Download current student's report sheet as Microsoft Word Document (.doc)"
+                  >
+                    <i className="fas fa-file-word text-sm text-blue-200"></i>
+                    <span>Download Word (.doc)</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setExportNotification(`Generating combined Word file for all ${studentsList.length} enrolled students...`);
+                      downloadBulkCombinedWordDoc(studentsList, 'All Forms', 'Second Term');
+                      setTimeout(() => setExportNotification(null), 3500);
+                    }}
+                    className="px-3.5 py-2 bg-blue-900/80 hover:bg-blue-800 border border-blue-700 text-blue-100 font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                    title="Download all students in a combined Word document"
+                  >
+                    <i className="fas fa-layer-group text-sm text-blue-300"></i>
+                    <span>Bulk Word (All Students)</span>
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setExportNotification(`Packaging all ${studentsList.length} student report sheets into ZIP archive...`);
+                      await downloadBulkZipArchive(studentsList, 'All Forms', 'Second Term');
+                      setExportNotification(null);
+                    }}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                    title="Download all student report sheets in a ZIP archive"
+                  >
+                    <i className="fas fa-file-archive text-sm text-amber-400"></i>
+                    <span>Bulk ZIP Archive</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      const marks = getStudentSubjectsData(viewingReportCardStudent, FATIMA_SUBJECTS);
+                      printSingleReportSheet(viewingReportCardStudent, marks);
+                    }}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20 transition-all"
+                    title="Print official report card on paper"
+                  >
+                    <i className="fas fa-print"></i>
+                    <span>Print Report Card</span>
+                  </button>
+                  <button
+                    onClick={() => printBulkReportSheets(studentsList)}
+                    className="px-3.5 py-2 bg-teal-800 hover:bg-teal-700 border border-teal-600 text-teal-100 font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                    title="Print all student report cards in bulk"
+                  >
+                    <i className="fas fa-copy"></i>
+                    <span>Bulk Print All</span>
+                  </button>
+                </div>
+
+                {exportNotification && (
+                  <div className="w-full bg-emerald-950/80 border border-emerald-500/50 rounded-xl px-3.5 py-2 text-xs text-emerald-200 flex items-center justify-between animate-fadeIn mt-1">
+                    <div className="flex items-center gap-2">
+                      <i className="fas fa-spinner fa-spin text-emerald-400"></i>
+                      <span>{exportNotification}</span>
+                    </div>
+                    <button
+                      onClick={() => setExportNotification(null)}
+                      className="text-emerald-400 hover:text-white font-bold"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Authentic Printable Secondary School Report Card */}
+            {viewingReportCardStudent && (
+              <div className="printable-dossier bg-white text-slate-900 rounded-2xl p-6 sm:p-8 shadow-2xl border border-slate-200 max-w-4xl mx-auto">
                 {/* Header */}
                 <div className="border-b-2 border-slate-900 pb-2 mb-4 text-center">
                   <div className="flex items-center justify-between gap-4">
@@ -872,10 +997,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, username, onLogout, 
                   Next Term Begins on: Monday 26 July, 2021
                 </div>
 
-                <div className="flex justify-end mt-4">
+                <div className="flex justify-end items-center gap-2 mt-4 no-print">
                   <button
-                    onClick={() => window.print()}
-                    className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 cursor-pointer flex items-center gap-2"
+                    onClick={() => {
+                      const marks = getStudentSubjectsData(viewingReportCardStudent, FATIMA_SUBJECTS);
+                      downloadStudentWordDoc(viewingReportCardStudent, marks);
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-500 cursor-pointer flex items-center gap-2 transition-colors"
+                  >
+                    <i className="fas fa-file-word"></i> Download Word (.doc)
+                  </button>
+                  <button
+                    onClick={() => {
+                      const marks = getStudentSubjectsData(viewingReportCardStudent, FATIMA_SUBJECTS);
+                      printSingleReportSheet(viewingReportCardStudent, marks);
+                    }}
+                    className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 cursor-pointer flex items-center gap-2 transition-colors"
                   >
                     <i className="fas fa-print"></i> Print Official Report Card
                   </button>
@@ -1061,6 +1198,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, username, onLogout, 
               </form>
             </div>
           </div>
+        )}
+
+        {/* TAB 7: RBAC & DEPARTMENT AUTHORIZATION ENGINE */}
+        {activeTab === 'rbac' && (
+          <DepartmentAuthorizationView
+            currentUser={
+              SYSTEM_USERS.find((u) => u.role === role) || SYSTEM_USERS[0]
+            }
+            onSelectUserToSimulate={(selected) => {
+              if (selected.role === 'exam_officer' && onOpenExamOfficer) {
+                onOpenExamOfficer();
+              } else if (selected.role === 'bursar' && onOpenBursar) {
+                onOpenBursar();
+              } else if (selected.role === 'pta_secretary' && onOpenPta) {
+                onOpenPta();
+              }
+            }}
+          />
         )}
       </main>
 

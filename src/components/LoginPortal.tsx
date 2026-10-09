@@ -52,7 +52,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         onLoginSuccess('admin', username);
       } else if (cleanUser.includes('exam') || cleanUser.includes('danjuma')) {
         onLoginSuccess('exam_officer', 'Dr. A. S. Danjuma (Exam Officer)');
-      } else if (cleanUser.includes('teach') || cleanUser === 'mr.gondwe') {
+      } else if (cleanUser.includes('bursar') || cleanUser.includes('maryam') || cleanUser.includes('alhassan')) {
+        onLoginSuccess('bursar', 'Hajiya Maryam B. Al-Hassan (Bursar)');
+      } else if (cleanUser.includes('pta') || cleanUser.includes('eze')) {
+        onLoginSuccess('pta_secretary', 'Engr. Kenneth C. Eze (PTA Fin Sec)');
+      } else if (cleanUser.includes('teach') || cleanUser === 'mr.gondwe' || cleanUser.includes('olatunji')) {
         onLoginSuccess('teacher', username);
       } else if (cleanUser.includes('stu') || cleanUser.includes('parent') || cleanUser === 'chikondi') {
         onLoginSuccess('student', username);
@@ -65,7 +69,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     }, 850);
   };
 
-  const setDemoCredentials = (role: 'admin' | 'exam_officer' | 'teacher' | 'student') => {
+  const setDemoCredentials = (role: 'admin' | 'exam_officer' | 'bursar' | 'pta_secretary' | 'teacher' | 'student') => {
     setErrorMessage('');
     setUsernameValidator('');
     setPasswordValidator('');
@@ -76,6 +80,12 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     } else if (role === 'exam_officer') {
       setUsername('exam_officer');
       setPassword('exam2026');
+    } else if (role === 'bursar') {
+      setUsername('bursar');
+      setPassword('bursar2026');
+    } else if (role === 'pta_secretary') {
+      setUsername('pta_secretary');
+      setPassword('pta2026');
     } else if (role === 'teacher') {
       setUsername('teacher');
       setPassword('teach123');
@@ -115,7 +125,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 <span>Quick Demo Accounts:</span>
                 <span className="text-[10px] text-orange-400 font-semibold">Click to fill</span>
               </div>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setDemoCredentials('admin')}
@@ -129,6 +139,20 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                   className="py-1 px-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-500/20 border border-emerald-400/30 text-emerald-200 text-[10px] font-bold transition-all text-center cursor-pointer"
                 >
                   Exam Off.
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDemoCredentials('bursar')}
+                  className="py-1 px-1 rounded-lg bg-amber-950/80 hover:bg-amber-500/20 border border-amber-400/30 text-amber-200 text-[10px] font-bold transition-all text-center cursor-pointer"
+                >
+                  Bursar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDemoCredentials('pta_secretary')}
+                  className="py-1 px-1 rounded-lg bg-teal-950/80 hover:bg-teal-500/20 border border-teal-400/30 text-teal-200 text-[10px] font-bold transition-all text-center cursor-pointer"
+                >
+                  PTA Sec.
                 </button>
                 <button
                   type="button"

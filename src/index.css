@@ -714,3 +714,99 @@ body {
   .login-card { padding-left: 17px; padding-right: 17px; }
   .footer-links { font-size: .71rem; }
 }
+
+/* ==========================================================================
+   PRINT STYLES FOR OFFICIAL REPORT CARDS & DOSSIERS
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 6mm 8mm 6mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-size: 10pt !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #root {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Hide screen-only elements */
+  header,
+  nav,
+  footer,
+  aside,
+  #networkCanvas,
+  .floating-shapes,
+  .bg-overlay,
+  .no-print,
+  button,
+  input,
+  select,
+  .top-banner,
+  .nav-tabs,
+  .dashboard-sidebar,
+  .stats-grid,
+  .security-alert {
+    display: none !important;
+  }
+
+  /* Make sure printable dossier spans 100% with pure white background and crisp black lines */
+  .printable-dossier,
+  .print-area {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 4px !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border: 2px solid #000000 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .printable-dossier * {
+    color: #000000 !important;
+    border-color: #000000 !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Ensure tables render full width with solid black borders */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  table, th, td {
+    border-color: #000000 !important;
+  }
+
+  .page-break {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  /* Force background colors to print if needed for headers */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+

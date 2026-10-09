@@ -1,42 +1,64 @@
 import { Request, Response, NextFunction } from 'express';
-import pool from '../db';
+import jwt from 'jsonwebtoken';
+import db from '../db';
 
-// Enhanced Request type to include user and scope
+const JWT_SECRET = process.env.JWT_SECRET || 'sms_super_secret_jwt_hmac256_key_rotate_2026';
+
+export interface UserPayload {
+  id: string;
+  role: string;
+  department_id: string;
+  school_id: string;
+  email?: string;
+}
+
 export interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    role: string;
-    department_id: string;
-    school_id: string;
-  };
+  user?: UserPayload;
   scopeFilter?: {
     department_id?: string;
     school_id?: string;
   };
 }
 
+export const signToken = (payload: UserPayload): string => {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
+};
+
+export const verifyToken = (token: string): UserPayload => {
+  return jwt.verify(token, JWT_SECRET) as UserPayload;
+};
+
 export const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  // Authentication logic (e.g., verifying JWT)
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or malformed Bearer token.' });
+  }
+
+  const token = authHeader.split(' ')[1];
 
   try {
-    // Verify token and set req.user...
-    // Mock user for now
-    req.user = { id: 'user-1', role: 'admin', department_id: 'dept-1', school_id: 'school-1' };
+    const decoded = jwt.verify(token, JWT_SECRET) as UserPayload;
+    // Enforce that decoded user object contains mandatory multi-tenant and identity claims
+    if (!decoded.id || !decoded.school_id || !decoded.role) {
+      return res.status(401).json({ error: 'Unauthorized: Incomplete token claims.' });
+    }
+
+    req.user = decoded;
     next();
-  } catch (error) {
-    res.status(401).json({ error: 'Invalid token' });
+  } catch (error: any) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token.' });
   }
 };
 
 export const authorize = (requiredPermission: string, scope: 'department' | 'school') => {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const { user } = req;
-    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized: Caller identity is missing.' });
+    }
 
-    // 1. Check if user has permission
-    const result = await pool.query(
+    // Check permission in the database for the user's role
+    const result = await db.query(
       `SELECT 1 FROM role_permissions rp
        JOIN permissions p ON rp.permission_id = p.id
        WHERE rp.role_id = $1 AND p.name = $2`,
@@ -44,16 +66,18 @@ export const authorize = (requiredPermission: string, scope: 'department' | 'sch
     );
 
     if (result.rowCount === 0) {
-      return res.status(403).json({ error: 'You do not have permission to access this information.' });
+      return res.status(403).json({
+        error: `Forbidden: Role '${user.role}' lacks permission '${requiredPermission}'.`
+      });
     }
 
-    // 2. Set scope for query filtering
+    // Set scope for strict server-side tenant & department isolation
     if (scope === 'department') {
-      req.scopeFilter = { department_id: user.department_id };
+      req.scopeFilter = { department_id: user.department_id, school_id: user.school_id };
     } else if (scope === 'school') {
       req.scopeFilter = { school_id: user.school_id };
     }
-    
+
     next();
   };
 };
