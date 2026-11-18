@@ -169,12 +169,12 @@ body {
   text-shadow: 0 5px 16px rgba(0,0,0,.28);
 }
 
-.fecomas-brand {
+.bichitech-brand {
   margin: 0 0 7px;
   line-height: 1.18;
 }
 
-.fecomas-main {
+.bichitech-main {
   display: block;
   color: #ff3333 !important;
   font-size: 2rem;
@@ -185,7 +185,7 @@ body {
   text-shadow: 0 4px 18px rgba(255, 51, 51, 0.35);
 }
 
-.fecomas-sub {
+.bichitech-sub {
   display: block;
   color: #fff;
   font-size: 1.25rem;
@@ -467,7 +467,7 @@ body {
   animation: modalPop .25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.modal-header-fecomas {
+.modal-header-bichitech {
   color: #fff;
   background: linear-gradient(135deg, var(--fe-blue), var(--fe-blue-mid));
   border-bottom: 4px solid var(--fe-orange);
@@ -705,7 +705,7 @@ body {
     border-radius: 22px;
   }
   .logo-mark i { font-size: 2.15rem; }
-  .fecomas-sub { font-size: 1.15rem; }
+  .bichitech-sub { font-size: 1.15rem; }
   .shape-one, .shape-two, .shape-three { display: none; }
   #networkCanvas { opacity: .22; }
 }
@@ -786,6 +786,13 @@ body {
     border-color: #000000 !important;
     text-shadow: none !important;
     box-shadow: none !important;
+  }
+
+  .printable-dossier img {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    display: block !important;
+    max-width: 100% !important;
   }
 
   /* Ensure tables render full width with solid black borders */

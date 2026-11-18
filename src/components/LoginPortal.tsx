@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { UserRole } from '../types';
+import { UserRole, Student } from '../types';
+import { MOCK_STUDENTS } from '../data/mockData';
+import { generateComprehensivePromotedRoster } from '../services/studentPromotionService';
 
 interface LoginPortalProps {
-  onLoginSuccess: (role: UserRole, username: string) => void;
+  onLoginSuccess: (role: UserRole, username: string, studentData?: Student) => void;
   onNavigateToForgotPin: () => void;
   onOpenRecoverModal: () => void;
   onOpenPolicyModal: (type: 'terms' | 'privacy') => void;
@@ -22,6 +24,19 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const [passwordValidator, setPasswordValidator] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  // Cached pool of students for quick reg no lookup
+  const allStudentsPool: Student[] = React.useMemo(() => {
+    try {
+      const roster = generateComprehensivePromotedRoster();
+      const combined = [...MOCK_STUDENTS, ...roster];
+      const map = new Map<string, Student>();
+      combined.forEach(s => map.set(s.studentNo.toLowerCase(), s));
+      return Array.from(map.values());
+    } catch {
+      return MOCK_STUDENTS;
+    }
+  }, []);
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setUsernameValidator('');
@@ -30,11 +45,11 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
     let hasError = false;
     if (!username.trim()) {
-      setUsernameValidator('Username is required.');
+      setUsernameValidator('Username, Email or Registration Number is required.');
       hasError = true;
     }
     if (!password.trim()) {
-      setPasswordValidator('Password is required.');
+      setPasswordValidator('Password or Portal PIN is required.');
       hasError = true;
     }
 
@@ -47,7 +62,25 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       const cleanUser = username.trim().toLowerCase();
       const cleanPass = password.trim();
 
-      // Flexible validation: allows standard demo logins or any custom credentials
+      // 1. Check if user is a student signing in with their Registration Number (Admission No)
+      const matchedStudent = allStudentsPool.find(
+        (st) =>
+          st.studentNo.toLowerCase() === cleanUser ||
+          st.studentNo.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanUser.replace(/[^a-z0-9]/g, '') ||
+          st.id.toLowerCase() === cleanUser
+      );
+
+      if (matchedStudent) {
+        // Validate PIN or allow flexible demo access
+        if (!cleanPass || (matchedStudent.pin && cleanPass !== matchedStudent.pin && cleanPass !== '2413' && cleanPass.length < 3)) {
+          setErrorMessage(`Invalid PIN for Reg No ${matchedStudent.studentNo}. Default demo PIN is ${matchedStudent.pin || '2413'}.`);
+          return;
+        }
+        onLoginSuccess('student', `${matchedStudent.firstName} ${matchedStudent.lastName}`, matchedStudent);
+        return;
+      }
+
+      // 2. Check standard staff, examination, and administrative roles
       if (cleanUser === 'admin' || cleanUser === 'administrator' || cleanUser === 'bichitech3@gmail.com') {
         onLoginSuccess('admin', username);
       } else if (cleanUser.includes('exam') || cleanUser.includes('danjuma')) {
@@ -58,15 +91,16 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         onLoginSuccess('pta_secretary', 'Engr. Kenneth C. Eze (PTA Fin Sec)');
       } else if (cleanUser.includes('teach') || cleanUser === 'mr.gondwe' || cleanUser.includes('olatunji')) {
         onLoginSuccess('teacher', username);
-      } else if (cleanUser.includes('stu') || cleanUser.includes('parent') || cleanUser === 'chikondi') {
-        onLoginSuccess('student', username);
+      } else if (cleanUser.includes('stu') || cleanUser.includes('parent') || cleanUser === 'chikondi' || cleanUser === 'fatima') {
+        const student = allStudentsPool[0] || MOCK_STUDENTS[0];
+        onLoginSuccess('student', student.studentNo, student);
       } else if (cleanPass.length >= 3) {
         // Any realistic attempt works so the user can test the full app
         onLoginSuccess('admin', username);
       } else {
         setErrorMessage('Invalid Username or Password. Please verify your credentials and try again.');
       }
-    }, 850);
+    }, 700);
   };
 
   const setDemoCredentials = (role: 'admin' | 'exam_officer' | 'bursar' | 'pta_secretary' | 'teacher' | 'student') => {
@@ -90,8 +124,9 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       setUsername('teacher');
       setPassword('teach123');
     } else {
-      setUsername('STU-2024-0891');
-      setPassword('4821');
+      // Fatima Abdullahi - Student Reg No 2413
+      setUsername('2413');
+      setPassword('2413');
     }
   };
 
@@ -104,9 +139,9 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
               <img src="/assets/img/nda-logo.png" alt="NDA Logo" className="w-16 h-16 object-contain" />
             </div>
 
-            <h2 className="fecomas-brand">
-              <span className="fecomas-main text-red-600" style={{ color: '#ff2222' }}>NDASSS</span>
-              <span className="fecomas-sub">School Management System</span>
+            <h2 className="bichitech-brand">
+              <span className="bichitech-main text-red-600" style={{ color: '#ff2222' }}>NDASSS</span>
+              <span className="bichitech-sub">Management System</span>
             </h2>
 
             <p className="description">Login to access your portal</p>
@@ -164,14 +199,15 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                 <button
                   type="button"
                   onClick={() => setDemoCredentials('student')}
-                  className="py-1 px-1 rounded-lg bg-blue-950/80 hover:bg-orange-500/20 border border-blue-400/30 text-white text-[10px] font-bold transition-all text-center cursor-pointer"
+                  className="py-1 px-1 rounded-lg bg-blue-950/80 hover:bg-blue-600/30 border border-blue-400/40 text-blue-200 text-[10px] font-bold transition-all text-center cursor-pointer"
+                  title="Sign in as Fatima Abdullahi (Reg No: 2413)"
                 >
-                  Student
+                  Student (2413)
                 </button>
               </div>
             </div>
 
-            {/* Username Input Group */}
+            {/* Username / Reg No Input Group */}
             <div className="form-group">
               <div className="input-group">
                 <div className="input-group-prepend">
@@ -184,7 +220,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
                   id="TxtUsername"
                   className="form-control"
                   type="text"
-                  placeholder="Username"
+                  placeholder="Username, Email or Student Reg No (e.g. 2413)"
                   autoComplete="off"
                   value={username}
                   onChange={(e) => {
@@ -321,7 +357,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
       </form>
 
       {/* Page Copyright matching original */}
-      <div className="page-copyright">&copy; Fecomas Tech Solutions 2026</div>
+      <div className="page-copyright">&copy; Bichitech 2026</div>
     </>
   );
 };

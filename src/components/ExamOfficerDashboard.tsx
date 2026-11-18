@@ -7,6 +7,13 @@ import {
   DEMO_SCHOOLS
 } from '../data/mockData';
 import { Student, SubjectMark, ExamTimetableEntry, AuditLogEntry } from '../types';
+import { BulkStudentRegistrationModal } from './BulkStudentRegistrationModal';
+import { StudentPromotionModal } from './StudentPromotionModal';
+import { AllStudentsRecordsPreviewModal } from './AllStudentsRecordsPreviewModal';
+import { UpdateStudentModal } from './UpdateStudentModal';
+import { DeleteStudentModal } from './DeleteStudentModal';
+import { ClassArmSelectorBar } from './ClassArmSelectorBar';
+import { matchesClassAndArmFilter } from '../services/classArmFilterService';
 import {
   downloadStudentPdf,
   downloadStudentWordDoc,
@@ -21,8 +28,16 @@ import {
   printSingleReportSheet,
   printBulkReportSheets,
   printSelectedReportSheets,
-  getStudentSubjectsData
+  getStudentSubjectsData,
+  STANDARD_SECONDARY_SUBJECTS,
+  CURRICULUM_PRESETS,
+  computeSubjectGrade,
+  createDefaultSubjectMark,
+  downloadAllStudentsRecordsCsv,
+  printAllStudentsRecordsTable,
+  printAllStudentsRecordsCsvText
 } from '../services/reportSheetExportService';
+import { NDA_LOGO_BASE64 } from '../services/ndaLogoBase64';
 import {
   BarChart,
   Bar,
@@ -49,23 +64,84 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
     'overview' | 'search' | 'scores' | 'broadsheet' | 'dossier' | 'timetable' | 'audit'
   >('overview');
 
+  const [studentsList, setStudentsList] = useState<Student[]>(MOCK_STUDENTS);
   const [selectedStudent, setSelectedStudent] = useState<Student>(MOCK_STUDENTS[0]);
+  const [studentSubjectsMap, setStudentSubjectsMap] = useState<Record<string, SubjectMark[]>>({
+    [MOCK_STUDENTS[0].id]: FATIMA_SUBJECTS,
+  });
   const [subjectsData, setSubjectsData] = useState<SubjectMark[]>(FATIMA_SUBJECTS);
   const [timetableList, setTimetableList] = useState<ExamTimetableEntry[]>(MOCK_TIMETABLE);
   const [auditList, setAuditList] = useState<AuditLogEntry[]>(MOCK_AUDIT_LOGS);
   const [exportNotification, setExportNotification] = useState<string | null>(null);
-  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>(['1', '2']);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([MOCK_STUDENTS[0].id, MOCK_STUDENTS[1]?.id || 'stu-ibrahim']);
   const [isBulkExportModalOpen, setIsBulkExportModalOpen] = useState<boolean>(false);
   const [bulkExportFormat, setBulkExportFormat] = useState<'pdf-zip' | 'continuous-word' | 'continuous-pdf' | 'word-zip'>('pdf-zip');
   const [bulkExportIncludeCsv, setBulkExportIncludeCsv] = useState<boolean>(true);
   const [bulkExportIncludeManifest, setBulkExportIncludeManifest] = useState<boolean>(true);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
+  // Modals for Adding Students, Promotions, and Subject Management
+  const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState<boolean>(false);
+  const [isBulkStudentModalOpen, setIsBulkStudentModalOpen] = useState<boolean>(false);
+  const [isPromotionModalOpen, setIsPromotionModalOpen] = useState<boolean>(false);
+  const [isRecordsPreviewOpen, setIsRecordsPreviewOpen] = useState<boolean>(false);
+  const [isManageSubjectsModalOpen, setIsManageSubjectsModalOpen] = useState<boolean>(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [deletingStudent, setDeletingStudent] = useState<Student | null>(null);
+
+  // New Student Enrollment Form State
+  const [newStudentForm, setNewStudentForm] = useState({
+    studentNo: '2428',
+    firstName: '',
+    lastName: '',
+    gender: 'Male' as 'Male' | 'Female',
+    formClass: 'SSS1 B',
+    arm: 'Science',
+    stream: 'Science Stream B',
+    house: 'Dalet',
+    session: '2020/21',
+    term: 'SECOND',
+    age: 16,
+    guardianName: '',
+    guardianPhone: '',
+    sponsor: '',
+    selectedCurriculumPreset: 'science' as keyof typeof CURRICULUM_PRESETS | 'custom',
+    selectedSubjects: [...CURRICULUM_PRESETS.science.subjects],
+    customSubjectInput: '',
+    baselineScoreOption: 'realistic' as 'realistic' | 'blank'
+  });
+
+  // Add Subject to Candidate Form State
+  const [newSubjectForm, setNewSubjectForm] = useState({
+    subjectName: 'Agricultural Science',
+    customSubjectName: '',
+    cat1: 8,
+    cat2: 9,
+    cat3: 8,
+    cat4: 8,
+    examMarks: 45
+  });
+
+  const getSubjectsForStudent = (student: Student): SubjectMark[] => {
+    if (studentSubjectsMap[student.id]) {
+      return studentSubjectsMap[student.id];
+    }
+    return getStudentSubjectsData(student, FATIMA_SUBJECTS);
+  };
+
   // Helper to switch student and recalculate their specific terminal scores
   const handleSelectStudentWithScores = (student: Student) => {
     setSelectedStudent(student);
-    const studentMarks = getStudentSubjectsData(student, FATIMA_SUBJECTS);
+    const studentMarks = getSubjectsForStudent(student);
     setSubjectsData(studentMarks);
+    setEditingSubjectIndex(0);
+    if (studentMarks[0]) {
+      setInputCat1(studentMarks[0].cat1);
+      setInputCat2(studentMarks[0].cat2);
+      setInputCat3(studentMarks[0].cat3);
+      setInputCat4(studentMarks[0].cat4);
+      setInputExam(studentMarks[0].examMarks);
+    }
   };
 
   // Search filters
@@ -121,6 +197,10 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
       target.grade = grade;
       target.remark = remark;
       setSubjectsData(updated);
+      setStudentSubjectsMap((prev) => ({
+        ...prev,
+        [selectedStudent.id]: updated
+      }));
 
       // Audit log entry
       const newAudit: AuditLogEntry = {
@@ -142,6 +222,250 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
       setScoreSaveNotification(`Marks for ${target.subject} updated successfully! (Total: ${termTotal}/100, Grade: ${grade})`);
       setTimeout(() => setScoreSaveNotification(null), 4000);
     }
+  };
+
+  // Handler for enrolling a new student and their subjects
+  const handleAddStudentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStudentForm.firstName.trim() || !newStudentForm.lastName.trim()) {
+      setExportNotification('Please provide both First Name and Last Name for the candidate.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+    if (newStudentForm.selectedSubjects.length === 0) {
+      setExportNotification('Please enroll the candidate in at least one subject.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+
+    const newId = `stu-gen-${Date.now()}`;
+    const newStudent: Student = {
+      id: newId,
+      studentNo: newStudentForm.studentNo.trim() || `24${Math.floor(25 + Math.random() * 50)}`,
+      schoolCode: 'NDASSS',
+      firstName: newStudentForm.firstName.trim(),
+      lastName: newStudentForm.lastName.trim(),
+      gender: newStudentForm.gender,
+      formClass: newStudentForm.formClass,
+      arm: newStudentForm.arm,
+      stream: `${newStudentForm.arm} Stream`,
+      house: newStudentForm.house,
+      session: newStudentForm.session,
+      term: newStudentForm.term,
+      age: Number(newStudentForm.age) || 16,
+      classAverageAge: 15,
+      timesOpened: 94,
+      timesPresent: 94,
+      timesAbsent: 0,
+      noInClass: 68,
+      positionInClass: studentsList.length + 1,
+      noInForm: 170,
+      positionInForm: studentsList.length + 1,
+      creditsAbove: newStudentForm.selectedSubjects.length,
+      passes: 0,
+      failures: 0,
+      sponsor: newStudentForm.sponsor || newStudentForm.guardianName || 'Parent / Guardian',
+      guardianName: newStudentForm.guardianName || 'Parent / Guardian',
+      guardianPhone: newStudentForm.guardianPhone || '+234 803 000 0000',
+      guardianEmail: '',
+      status: 'Active',
+      feeBalance: 0,
+      totalFees: 380000,
+      attendanceRate: 100,
+      avatarUrl: newStudentForm.gender === 'Female'
+        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+      securityQuestion1: 'Mother maiden name',
+      securityAnswer1: 'Bello',
+      securityQuestion2: 'Primary school',
+      securityAnswer2: 'Command Children School',
+      pin: '1234'
+    };
+
+    // Generate subjects for the new student
+    const createdSubjects: SubjectMark[] = newStudentForm.selectedSubjects.map((subName, idx) => {
+      if (newStudentForm.baselineScoreOption === 'blank') {
+        return {
+          sNo: idx + 1,
+          subject: subName,
+          cat1: 0,
+          cat2: 0,
+          cat3: 0,
+          cat4: 0,
+          catTotal: 0,
+          examMarks: 0,
+          termTotal: 0,
+          classAverage: 55,
+          formAverage: 50,
+          grade: 'F9',
+          posInClass: 1,
+          posInForm: 1,
+          remark: 'FAIL'
+        };
+      }
+      const cat1 = Math.min(10, 8 + (idx % 3));
+      const cat2 = Math.min(10, 7 + (idx % 4));
+      const cat3 = Math.min(10, 8 + (idx % 2));
+      const cat4 = Math.min(10, 9 - (idx % 3));
+      const examMarks = 40 + (idx % 18);
+      return createDefaultSubjectMark(subName, idx + 1, cat1, cat2, cat3, cat4, examMarks);
+    });
+
+    setStudentsList((prev) => [newStudent, ...prev]);
+    setStudentSubjectsMap((prev) => ({
+      ...prev,
+      [newId]: createdSubjects
+    }));
+    setSelectedStudentIds((prev) => [newId, ...prev]);
+
+    // Select the newly enrolled candidate
+    setSelectedStudent(newStudent);
+    setSubjectsData(createdSubjects);
+    setEditingSubjectIndex(0);
+
+    // Audit log
+    const enrollAudit: AuditLogEntry = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      user: 'Dr. A. S. Danjuma',
+      userId: 'EXAM-OFFICER-01',
+      role: 'Examination Officer',
+      department: 'Examination Department',
+      action: 'STUDENT_ENROLLMENT',
+      recordTable: 'students',
+      recordId: `stu-${newStudent.studentNo}`,
+      reason: `Enrolled candidate ${newStudent.lastName}, ${newStudent.firstName} (Adm No: ${newStudent.studentNo}) with ${createdSubjects.length} subjects in ${newStudent.formClass}`,
+      status: 'SUCCESS',
+      ipAddress: '192.168.10.42'
+    };
+    setAuditList((prev) => [enrollAudit, ...prev]);
+
+    // Reset form
+    setNewStudentForm({
+      studentNo: `24${Math.floor(29 + Math.random() * 50)}`,
+      firstName: '',
+      lastName: '',
+      gender: 'Male',
+      formClass: newStudent.formClass,
+      arm: newStudent.arm || 'Science',
+      stream: `${newStudent.arm || 'Science'} Stream`,
+      house: 'Dalet',
+      session: '2020/21',
+      term: 'SECOND',
+      age: 16,
+      guardianName: '',
+      guardianPhone: '',
+      sponsor: '',
+      selectedCurriculumPreset: 'science',
+      selectedSubjects: [...CURRICULUM_PRESETS.science.subjects],
+      customSubjectInput: '',
+      baselineScoreOption: 'realistic'
+    });
+
+    setIsAddStudentModalOpen(false);
+    setExportNotification(`Enrolled candidate ${newStudent.lastName}, ${newStudent.firstName} (Adm No: ${newStudent.studentNo}) with ${createdSubjects.length} subjects successfully!`);
+    setTimeout(() => setExportNotification(null), 4000);
+  };
+
+  // Handler for adding a new subject to an active student
+  const handleAddSubjectToCandidate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const subName = newSubjectForm.customSubjectName.trim() || newSubjectForm.subjectName.trim();
+    if (!subName) return;
+
+    const currentMarks = getSubjectsForStudent(selectedStudent);
+    if (currentMarks.some((s) => s.subject.toLowerCase() === subName.toLowerCase())) {
+      setExportNotification(`Subject "${subName}" is already enrolled for ${selectedStudent.firstName}.`);
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+
+    const sNo = currentMarks.length + 1;
+    const newSubMark = createDefaultSubjectMark(
+      subName,
+      sNo,
+      Number(newSubjectForm.cat1),
+      Number(newSubjectForm.cat2),
+      Number(newSubjectForm.cat3),
+      Number(newSubjectForm.cat4),
+      Number(newSubjectForm.examMarks)
+    );
+
+    const updatedMarks = [...currentMarks, newSubMark];
+    setSubjectsData(updatedMarks);
+    setStudentSubjectsMap((prev) => ({
+      ...prev,
+      [selectedStudent.id]: updatedMarks
+    }));
+
+    const subAudit: AuditLogEntry = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      user: 'Dr. A. S. Danjuma',
+      userId: 'EXAM-OFFICER-01',
+      role: 'Examination Officer',
+      department: 'Examination Department',
+      action: 'SUBJECT_REGISTRATION',
+      recordTable: 'examination_subjects',
+      recordId: `sub-${selectedStudent.studentNo}-${subName}`,
+      reason: `Registered subject "${subName}" for ${selectedStudent.firstName} ${selectedStudent.lastName} (Total: ${newSubMark.termTotal}, Grade: ${newSubMark.grade})`,
+      status: 'SUCCESS',
+      ipAddress: '192.168.10.42'
+    };
+    setAuditList((prev) => [subAudit, ...prev]);
+
+    setNewSubjectForm({
+      subjectName: 'Agricultural Science',
+      customSubjectName: '',
+      cat1: 8,
+      cat2: 9,
+      cat3: 8,
+      cat4: 8,
+      examMarks: 45
+    });
+
+    setIsManageSubjectsModalOpen(false);
+    setScoreSaveNotification(`Added "${subName}" to ${selectedStudent.firstName}'s curriculum (Total: ${newSubMark.termTotal}/100, Grade: ${newSubMark.grade})`);
+    setTimeout(() => setScoreSaveNotification(null), 4000);
+  };
+
+  // Handler for removing a subject from an active student
+  const handleRemoveSubjectFromCandidate = (subjectNameToRemove: string) => {
+    const currentMarks = getSubjectsForStudent(selectedStudent);
+    if (currentMarks.length <= 1) {
+      setExportNotification('A candidate must have at least one enrolled subject.');
+      setTimeout(() => setExportNotification(null), 3000);
+      return;
+    }
+
+    const updatedMarks = currentMarks
+      .filter((s) => s.subject !== subjectNameToRemove)
+      .map((s, idx) => ({ ...s, sNo: idx + 1 }));
+
+    setSubjectsData(updatedMarks);
+    setStudentSubjectsMap((prev) => ({
+      ...prev,
+      [selectedStudent.id]: updatedMarks
+    }));
+    setEditingSubjectIndex(0);
+
+    const removeAudit: AuditLogEntry = {
+      id: `aud-${Date.now()}`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      user: 'Dr. A. S. Danjuma',
+      userId: 'EXAM-OFFICER-01',
+      role: 'Examination Officer',
+      department: 'Examination Department',
+      action: 'SUBJECT_DEREGISTRATION',
+      recordTable: 'examination_subjects',
+      recordId: `sub-${selectedStudent.studentNo}-${subjectNameToRemove}`,
+      reason: `Removed subject "${subjectNameToRemove}" from candidate ${selectedStudent.firstName} ${selectedStudent.lastName}`,
+      status: 'SUCCESS',
+      ipAddress: '192.168.10.42'
+    };
+    setAuditList((prev) => [removeAudit, ...prev]);
+    setScoreSaveNotification(`Removed "${subjectNameToRemove}" from ${selectedStudent.firstName}'s curriculum.`);
+    setTimeout(() => setScoreSaveNotification(null), 3000);
   };
 
   const handleTriggerSecurityTest = () => {
@@ -166,14 +490,15 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
     );
   };
 
-  // Filtered search students
-  const filteredStudents = MOCK_STUDENTS.filter((st) => {
+  // Filtered search students (powered by live studentsList state)
+  const filteredStudents = studentsList.filter((st) => {
     const matchesQuery =
+      searchQuery === '' ||
       st.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       st.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      st.studentNo.includes(searchQuery);
-    const matchesClass = searchClass === 'All' || st.formClass.includes(searchClass) || searchClass.includes(st.formClass);
-    return matchesQuery && matchesClass;
+      st.studentNo.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesClassArm = matchesClassAndArmFilter(st, searchClass, searchArm);
+    return matchesQuery && matchesClassArm;
   });
 
   // Bulk Selection Handlers & Selected Students
@@ -194,20 +519,34 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
   };
 
   const handleSelectAllStudents = () => {
-    setSelectedStudentIds(MOCK_STUDENTS.map((st) => st.id));
+    setSelectedStudentIds(studentsList.map((st) => st.id));
   };
 
   const handleClearSelection = () => {
     setSelectedStudentIds([]);
   };
 
-  const selectedStudentsList = MOCK_STUDENTS.filter((st) => selectedStudentIds.includes(st.id));
+  const handleUpdateStudent = (updated: Student) => {
+    setStudentsList((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    setExportNotification(`Updated details for candidate ${updated.firstName} ${updated.lastName} (${updated.studentNo})`);
+    setTimeout(() => setExportNotification(null), 4000);
+  };
+
+  const handleDeleteStudent = (studentId: string) => {
+    const target = studentsList.find((s) => s.id === studentId);
+    setStudentsList((prev) => prev.filter((s) => s.id !== studentId));
+    setSelectedStudentIds((prev) => prev.filter((id) => id !== studentId));
+    setExportNotification(`Removed candidate ${target ? `${target.firstName} ${target.lastName}` : ''} from examination registry.`);
+    setTimeout(() => setExportNotification(null), 4000);
+  };
+
+  const selectedStudentsList = studentsList.filter((st) => selectedStudentIds.includes(st.id));
   const isAllFilteredSelected =
     filteredStudents.length > 0 && filteredStudents.every((st) => selectedStudentIds.includes(st.id));
   const isSomeFilteredSelected =
     filteredStudents.some((st) => selectedStudentIds.includes(st.id)) && !isAllFilteredSelected;
 
-  // Bulk Download Selected Handlers
+  // Bulk Download Selected Handlers (with custom getSubjectsForStudent callback)
   const handleDownloadSelectedPdfZip = async () => {
     if (selectedStudentsList.length === 0) {
       setExportNotification('Please select at least one student from the table using the checkboxes.');
@@ -217,10 +556,16 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
     setIsExporting(true);
     setExportNotification(`Generating official PDF report cards & bundling ${selectedStudentsList.length} candidate(s) into single ZIP file...`);
     try {
-      await downloadSelectedPdfZipArchive(selectedStudentsList, searchClass, searchTerm + ' Term', {
-        includeCsv: bulkExportIncludeCsv,
-        includeManifest: bulkExportIncludeManifest
-      });
+      await downloadSelectedPdfZipArchive(
+        selectedStudentsList,
+        searchClass,
+        searchTerm + ' Term',
+        {
+          includeCsv: bulkExportIncludeCsv,
+          includeManifest: bulkExportIncludeManifest
+        },
+        getSubjectsForStudent
+      );
       setExportNotification(`Successfully downloaded ZIP archive containing ${selectedStudentsList.length} official PDF report cards!`);
       setTimeout(() => setExportNotification(null), 4000);
     } catch (err) {
@@ -238,7 +583,7 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
       return;
     }
     setExportNotification(`Generating continuous multi-page PDF document for ${selectedStudentsList.length} selected candidate(s)...`);
-    downloadSelectedCombinedPdf(selectedStudentsList, searchClass, searchTerm + ' Term');
+    downloadSelectedCombinedPdf(selectedStudentsList, searchClass, searchTerm + ' Term', getSubjectsForStudent);
     setTimeout(() => setExportNotification(null), 3500);
   };
 
@@ -249,7 +594,7 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
       return;
     }
     setExportNotification(`Generating continuous Microsoft Word document bundling ${selectedStudentsList.length} selected report sheet(s)...`);
-    downloadSelectedCombinedWordDoc(selectedStudentsList, searchClass, searchTerm + ' Term');
+    downloadSelectedCombinedWordDoc(selectedStudentsList, searchClass, searchTerm + ' Term', getSubjectsForStudent);
     setTimeout(() => setExportNotification(null), 3500);
   };
 
@@ -262,10 +607,16 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
     setIsExporting(true);
     setExportNotification(`Bundling ${selectedStudentsList.length} selected report sheet(s) into single Word ZIP archive...`);
     try {
-      await downloadSelectedZipArchive(selectedStudentsList, searchClass, searchTerm + ' Term', {
-        includeCsv: bulkExportIncludeCsv,
-        includeManifest: bulkExportIncludeManifest
-      });
+      await downloadSelectedZipArchive(
+        selectedStudentsList,
+        searchClass,
+        searchTerm + ' Term',
+        {
+          includeCsv: bulkExportIncludeCsv,
+          includeManifest: bulkExportIncludeManifest
+        },
+        getSubjectsForStudent
+      );
       setExportNotification(`Successfully downloaded ZIP archive containing ${selectedStudentsList.length} Word report sheets!`);
       setTimeout(() => setExportNotification(null), 4000);
     } catch (err) {
@@ -300,12 +651,12 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
       setTimeout(() => setExportNotification(null), 3000);
       return;
     }
-    printSelectedReportSheets(selectedStudentsList);
+    printSelectedReportSheets(selectedStudentsList, getSubjectsForStudent);
   };
 
   // Calculate totals and statistics
   const totalMarksSum = subjectsData.reduce((acc, curr) => acc + curr.termTotal, 0);
-  const averagePercentage = (totalMarksSum / subjectsData.length).toFixed(2);
+  const averagePercentage = (totalMarksSum / Math.max(1, subjectsData.length)).toFixed(2);
   const creditsAndAboveCount = subjectsData.filter((s) => ['A1', 'B2', 'B3', 'C4', 'C5', 'C6'].includes(s.grade)).length;
   const distinctionsCount = subjectsData.filter((s) => ['A1', 'B2', 'B3'].includes(s.grade)).length;
 
@@ -332,17 +683,26 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
       'Credits & Above'
     ];
 
-    const rows = MOCK_STUDENTS.map((st) => [
-      st.studentNo,
-      `${st.firstName} ${st.lastName}`,
-      st.formClass,
-      st.house || 'Dalet',
-      ...subjectsData.map((s) => s.termTotal),
-      totalMarksSum,
-      averagePercentage,
-      st.positionInClass || 1,
-      creditsAndAboveCount
-    ]);
+    const rows = studentsList.map((st) => {
+      const studentMarks = getSubjectsForStudent(st);
+      const studentTotal = studentMarks.reduce((acc, curr) => acc + curr.termTotal, 0);
+      const studentAvg = (studentTotal / Math.max(1, studentMarks.length)).toFixed(2);
+      const studentCredits = studentMarks.filter((s) => ['A1', 'B2', 'B3', 'C4', 'C5', 'C6'].includes(s.grade)).length;
+      return [
+        st.studentNo,
+        `"${st.lastName}, ${st.firstName}"`,
+        st.formClass,
+        st.house || 'Dalet',
+        ...subjectsData.map((s) => {
+          const match = studentMarks.find((sm) => sm.subject.toLowerCase() === s.subject.toLowerCase());
+          return match ? match.termTotal : '-';
+        }),
+        studentTotal,
+        `${studentAvg}%`,
+        st.positionInClass || 1,
+        studentCredits
+      ];
+    });
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -379,6 +739,50 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Preview All Student Records Quick Button */}
+              <button
+                onClick={() => setIsRecordsPreviewOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold transition-all shadow-md shadow-indigo-900/40 cursor-pointer active:scale-95"
+                title="Preview all student records, view joined subjects, inspect live CSV stream, and manage prints"
+              >
+                <i className="fas fa-eye text-indigo-200"></i>
+                <span className="hidden sm:inline">Preview Records</span>
+                <span className="sm:hidden">Preview</span>
+              </button>
+
+              {/* Enroll Student & Subjects Quick Button */}
+              <button
+                onClick={() => setIsAddStudentModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-900/40 cursor-pointer active:scale-95"
+                title="Enroll new candidate student and configure curriculum subjects"
+              >
+                <i className="fas fa-user-plus text-emerald-200"></i>
+                <span className="hidden sm:inline">Add Student</span>
+                <span className="sm:hidden">+ Student</span>
+              </button>
+
+              {/* Bulk Student Registration CSV Button */}
+              <button
+                onClick={() => setIsBulkStudentModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold transition-all shadow-md shadow-teal-900/40 cursor-pointer active:scale-95"
+                title="Bulk student registration via CSV formatted string or file"
+              >
+                <i className="fas fa-file-import text-teal-200"></i>
+                <span className="hidden sm:inline">Bulk Register (CSV)</span>
+                <span className="sm:hidden">Bulk CSV</span>
+              </button>
+
+              {/* Class Promotion & Push Progression Button */}
+              <button
+                onClick={() => setIsPromotionModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold transition-all shadow-md shadow-cyan-900/40 cursor-pointer active:scale-95"
+                title="Push classes forward (JSS 1→2, JSS 2→3, JSS 3→SSS 1, SSS 1→2, SSS 2→3) and join matching subjects"
+              >
+                <i className="fas fa-level-up-alt text-cyan-200"></i>
+                <span className="hidden sm:inline">Push Cohort / Promote</span>
+                <span className="sm:hidden">Promote</span>
+              </button>
+
               {/* Department Security & Isolation Button */}
               <button
                 onClick={handleTriggerSecurityTest}
@@ -612,13 +1016,89 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
         {/* TAB 2: CANDIDATE MULTI-CRITERIA SEARCH */}
         {activeTab === 'search' && (
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-lg space-y-5 animate-fade-in text-left">
-            <div>
-              <h3 className="text-lg font-black text-white">Student Examination Records Search</h3>
-              <p className="text-xs text-slate-400">Search students across classes, arms, sessions, and terms with authorization filtering</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-white">Student Examination Records Search</h3>
+                <p className="text-xs text-slate-400">Search students across classes, arms, sessions, and terms with authorization filtering</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setIsAddStudentModalOpen(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black rounded-xl transition-all shadow-md shadow-emerald-950/40 flex items-center gap-2 cursor-pointer active:scale-95 self-start sm:self-auto"
+                  title="Enroll a new student and configure their registered subjects"
+                >
+                  <i className="fas fa-user-plus text-emerald-200"></i>
+                  <span>Enroll Candidate</span>
+                </button>
+                <button
+                  onClick={() => setIsBulkStudentModalOpen(true)}
+                  className="px-4 py-2 bg-teal-800 hover:bg-teal-700 text-teal-100 border border-teal-600/50 text-xs font-bold rounded-xl transition-all shadow-md shadow-teal-950/40 flex items-center gap-2 cursor-pointer active:scale-95"
+                  title="Bulk register candidates from CSV string"
+                >
+                  <i className="fas fa-file-import text-teal-300"></i>
+                  <span>Bulk Register (CSV)</span>
+                </button>
+                <button
+                  onClick={() => setIsPromotionModalOpen(true)}
+                  className="px-4 py-2 bg-cyan-800 hover:bg-cyan-700 text-cyan-100 border border-cyan-600/50 text-xs font-bold rounded-xl transition-all shadow-md shadow-cyan-950/40 flex items-center gap-2 cursor-pointer active:scale-95"
+                  title="Push classes forward (JSS 1→2, JSS 2→3, JSS 3→SSS 1, SSS 1→2, SSS 2→3) and join matching subjects"
+                >
+                  <i className="fas fa-level-up-alt text-cyan-300"></i>
+                  <span>Push / Promote Classes</span>
+                </button>
+                <button
+                  onClick={() => setIsRecordsPreviewOpen(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-emerald-950/40 flex items-center gap-2 cursor-pointer active:scale-95"
+                  title="Preview all student records, view joined curriculum subjects, and inspect live CSV stream"
+                >
+                  <i className="fas fa-eye text-emerald-200"></i>
+                  <span>Preview Records</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const toPrint = filteredStudents.length > 0 ? filteredStudents : studentsList;
+                    printAllStudentsRecordsTable(toPrint, `NDASSS Candidate Registry (${toPrint.length} Students)`);
+                    setExportNotification(`Sent ${toPrint.length} student records to printer.`);
+                    setTimeout(() => setExportNotification(null), 4000);
+                  }}
+                  className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+                  title="Print all student records formatted for official tabular printing"
+                >
+                  <i className="fas fa-print text-blue-200"></i>
+                  <span>Print Records</span>
+                </button>
+                <button
+                  onClick={() => {
+                    downloadAllStudentsRecordsCsv(filteredStudents.length > 0 ? filteredStudents : studentsList);
+                    setExportNotification(`Downloaded all ${filteredStudents.length > 0 ? filteredStudents.length : studentsList.length} student records in CSV format.`);
+                    setTimeout(() => setExportNotification(null), 4000);
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+                  title="Download complete registry records of all candidates in CSV format"
+                >
+                  <i className="fas fa-download text-emerald-400"></i>
+                  <span>Download Records (CSV)</span>
+                </button>
+              </div>
             </div>
 
+            {/* Quick Stream & Arm Filter Bar (2A differently, 2B differently...) */}
+            <ClassArmSelectorBar
+              selectedClass={searchClass}
+              onSelectClass={setSearchClass}
+              selectedArm={searchArm}
+              onSelectArm={setSearchArm}
+              students={studentsList}
+              showBulkSelectButton={true}
+              onBulkSelectArm={(matchingIds) => {
+                setSelectedStudentIds((prev) => Array.from(new Set([...prev, ...matchingIds])));
+                setExportNotification(`Selected all ${matchingIds.length} candidate students in matching stream!`);
+                setTimeout(() => setExportNotification(null), 3500);
+              }}
+            />
+
             {/* Filter Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
               <div>
                 <label className="text-[11px] font-bold text-slate-400 block mb-1">Search Keyword</label>
                 <input
@@ -631,17 +1111,60 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-slate-400 block mb-1">Class / Form</label>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Class / Stream</label>
                 <select
                   value={searchClass}
                   onChange={(e) => setSearchClass(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
                 >
                   <option value="All">All Classes</option>
-                  <option value="SSS1 B">SSS 1B</option>
-                  <option value="SSS1 A">SSS 1A</option>
-                  <option value="SSS2 A">SSS 2A</option>
-                  <option value="SSS3 Science">SSS 3 Science</option>
+                  <optgroup label="JSS 2 (A - D)">
+                    <option value="JSS 2">JSS 2 (All Arms)</option>
+                    <option value="2A">★ JSS 2A (2A)</option>
+                    <option value="2B">★ JSS 2B (2B)</option>
+                    <option value="2C">★ JSS 2C (2C)</option>
+                    <option value="2D">★ JSS 2D (2D)</option>
+                  </optgroup>
+                  <optgroup label="JSS 1 & 3">
+                    <option value="1A">JSS 1A</option>
+                    <option value="1B">JSS 1B</option>
+                    <option value="1C">JSS 1C</option>
+                    <option value="1D">JSS 1D</option>
+                    <option value="3A">JSS 3A</option>
+                    <option value="3B">JSS 3B</option>
+                    <option value="3C">JSS 3C</option>
+                    <option value="3D">JSS 3D</option>
+                  </optgroup>
+                  <optgroup label="Senior Secondary (SSS 1 - 3)">
+                    <option value="SSS 1A">SSS 1A</option>
+                    <option value="SSS 1B">SSS 1B</option>
+                    <option value="SSS 1C">SSS 1C</option>
+                    <option value="SSS 1D">SSS 1D</option>
+                    <option value="SSS 2A">SSS 2A</option>
+                    <option value="SSS 2B">SSS 2B</option>
+                    <option value="SSS 2C">SSS 2C</option>
+                    <option value="SSS 2D">SSS 2D</option>
+                    <option value="SSS 3A">SSS 3A</option>
+                    <option value="SSS 3B">SSS 3B</option>
+                    <option value="SSS 3C">SSS 3C</option>
+                    <option value="SSS 3D">SSS 3D</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Arm Division</label>
+                <select
+                  value={searchArm}
+                  onChange={(e) => setSearchArm(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                >
+                  <option value="All">All Arms (A - E)</option>
+                  <option value="A">Arm A</option>
+                  <option value="B">Arm B</option>
+                  <option value="C">Arm C</option>
+                  <option value="D">Arm D</option>
+                  <option value="E">Arm E</option>
                 </select>
               </div>
 
@@ -699,6 +1222,40 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                   </label>
                 </div>
 
+                {/* Quick Select by Stream: 2A differently, 2B differently, 2C, 2D... */}
+                <div className="flex items-center gap-1 flex-wrap bg-slate-900 border border-slate-800 rounded-lg p-1">
+                  <span className="text-[10px] text-amber-400 font-black px-1">Select Cohort:</span>
+                  {['2A', '2B', '2C', '2D', '1A', '1B', '3A', 'SSS 1A', 'SSS 1B'].map((tag) => {
+                    const tagStudents = studentsList.filter((s) => matchesClassAndArmFilter(s, tag, 'All'));
+                    const isAllTagSelected = tagStudents.length > 0 && tagStudents.every((s) => selectedStudentIds.includes(s.id));
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          const tagIds = tagStudents.map((s) => s.id);
+                          if (isAllTagSelected) {
+                            setSelectedStudentIds((prev) => prev.filter((id) => !tagIds.includes(id)));
+                            setExportNotification(`Deselected all ${tag} students`);
+                          } else {
+                            setSelectedStudentIds((prev) => Array.from(new Set([...prev, ...tagIds])));
+                            setExportNotification(`Selected all ${tagIds.length} students in ${tag}!`);
+                          }
+                          setTimeout(() => setExportNotification(null), 3000);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                          isAllTagSelected
+                            ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-300'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                        }`}
+                        title={`Select / Deselect all ${tagStudents.length} students in ${tag}`}
+                      >
+                        {tag} ({tagStudents.length})
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="flex items-center gap-1.5 text-xs">
                   <span className={`px-2.5 py-1 rounded-full font-bold text-[11px] border ${
                     selectedStudentsList.length > 0
@@ -717,13 +1274,13 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                       Clear
                     </button>
                   )}
-                  {selectedStudentsList.length < MOCK_STUDENTS.length && (
+                  {selectedStudentsList.length < studentsList.length && (
                     <button
                       onClick={handleSelectAllStudents}
                       className="px-2 py-1 text-[11px] text-slate-400 hover:text-emerald-400 font-semibold cursor-pointer underline transition-colors"
                       title="Select all students in class"
                     >
-                      Select All Class ({MOCK_STUDENTS.length})
+                      Select All Class ({studentsList.length})
                     </button>
                   )}
                 </div>
@@ -821,6 +1378,21 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                   <i className="fas fa-print"></i>
                   <span className="hidden sm:inline">Print Selected</span>
                 </button>
+
+                {/* Direct CSV Download Quick Action */}
+                <button
+                  onClick={() => {
+                    const toDownload = selectedStudentsList.length > 0 ? selectedStudentsList : studentsList;
+                    downloadAllStudentsRecordsCsv(toDownload);
+                    setExportNotification(`Downloaded ${toDownload.length} student records in CSV format.`);
+                    setTimeout(() => setExportNotification(null), 4000);
+                  }}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 active:scale-95 cursor-pointer shadow-sm"
+                  title="Download student records in CSV format"
+                >
+                  <i className="fas fa-file-csv"></i>
+                  <span>Download CSV ({selectedStudentsList.length > 0 ? selectedStudentsList.length : 'All'})</span>
+                </button>
               </div>
             </div>
 
@@ -880,7 +1452,23 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                               className="w-8 h-8 rounded-full object-cover border border-slate-700"
                             />
                             <div>
-                              <p className="font-bold text-white uppercase text-xs">{st.lastName}, {st.firstName}</p>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="font-bold text-white uppercase text-xs">{st.lastName}, {st.firstName}</p>
+                                <button
+                                  onClick={() => setEditingStudent(st)}
+                                  className="text-slate-400 hover:text-orange-400 text-[10px] p-0.5 rounded cursor-pointer transition-colors"
+                                  title={`Update details for ${st.firstName} ${st.lastName}`}
+                                >
+                                  <i className="fas fa-edit"></i>
+                                </button>
+                                <button
+                                  onClick={() => setDeletingStudent(st)}
+                                  className="text-slate-400 hover:text-rose-400 text-[10px] p-0.5 rounded cursor-pointer transition-colors"
+                                  title={`Remove / Delete ${st.firstName} ${st.lastName}`}
+                                >
+                                  <i className="fas fa-trash-alt"></i>
+                                </button>
+                              </div>
                               <p className="text-[10px] text-slate-400">Age: {st.age || 16} &bull; Sponsor: {st.sponsor || 'Self'}</p>
                             </div>
                           </div>
@@ -902,6 +1490,30 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                         </td>
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => setEditingStudent(st)}
+                              className="px-2 py-1 rounded-lg bg-orange-700 hover:bg-orange-600 text-white font-bold text-[10px] cursor-pointer shadow-sm shadow-orange-700/20 flex items-center gap-1"
+                              title="Edit Candidate Profile"
+                            >
+                              <i className="fas fa-user-pen"></i> Edit
+                            </button>
+                            <button
+                              onClick={() => setDeletingStudent(st)}
+                              className="px-2 py-1 rounded-lg bg-rose-800 hover:bg-rose-700 text-white font-bold text-[10px] cursor-pointer shadow-sm shadow-rose-800/20 flex items-center gap-1"
+                              title="Remove Candidate from Registry"
+                            >
+                              <i className="fas fa-trash-alt"></i> Delete
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleSelectStudentWithScores(st);
+                                setIsManageSubjectsModalOpen(true);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-teal-700 hover:bg-teal-600 text-white font-bold text-[10px] cursor-pointer shadow-sm shadow-teal-700/20"
+                              title="Manage Enrolled Curriculum Subjects"
+                            >
+                              <i className="fas fa-book-open mr-1"></i> Subjects
+                            </button>
                             <button
                               onClick={() => {
                                 handleSelectStudentWithScores(st);
@@ -978,11 +1590,27 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                     Entering marks for: <strong className="text-white uppercase">{selectedStudent.lastName}, {selectedStudent.firstName}</strong> (Adm No: {selectedStudent.studentNo} &bull; Class: {selectedStudent.formClass})
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs text-slate-400 font-medium">Session: {selectedStudent.session || '2020/21'} &bull; Term: {selectedStudent.term || 'SECOND'}</span>
                   <button
+                    onClick={() => setIsManageSubjectsModalOpen(true)}
+                    className="px-3 py-1.5 bg-teal-700 hover:bg-teal-600 text-white font-bold text-xs rounded-xl cursor-pointer flex items-center gap-1.5 shadow-sm shadow-teal-700/20"
+                    title="Add or remove curriculum subjects for this student"
+                  >
+                    <i className="fas fa-book-medical"></i>
+                    <span>Manage / Add Subjects</span>
+                  </button>
+                  <button
+                    onClick={() => setIsAddStudentModalOpen(true)}
+                    className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl cursor-pointer flex items-center gap-1.5 shadow-sm shadow-emerald-700/20"
+                    title="Enroll another student"
+                  >
+                    <i className="fas fa-user-plus"></i>
+                    <span>+ Enroll Candidate</span>
+                  </button>
+                  <button
                     onClick={() => setActiveTab('dossier')}
-                    className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl cursor-pointer"
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl cursor-pointer"
                   >
                     <i className="fas fa-eye mr-1"></i> Preview Dossier
                   </button>
@@ -1023,6 +1651,15 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                       </button>
                     ))}
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsManageSubjectsModalOpen(true)}
+                    className="w-full mt-2 py-2 px-3 rounded-lg border border-dashed border-teal-500/50 hover:border-teal-400 bg-teal-950/20 hover:bg-teal-900/30 text-teal-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <i className="fas fa-plus-circle text-teal-400"></i>
+                    <span>+ Add Subject to Candidate</span>
+                  </button>
                 </div>
 
                 <div className="lg:col-span-2 bg-slate-950 p-5 rounded-xl border border-slate-800">
@@ -1185,8 +1822,38 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                 <button
                   onClick={exportBroadsheetCSV}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
+                  title="Download class examination assessment broadsheet in CSV format"
                 >
                   <i className="fas fa-file-csv"></i> CSV Broadsheet
+                </button>
+                <button
+                  onClick={() => setIsRecordsPreviewOpen(true)}
+                  className="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
+                  title="Preview all student records and view assigned subjects"
+                >
+                  <i className="fas fa-eye text-indigo-200"></i> Preview Records
+                </button>
+                <button
+                  onClick={() => {
+                    printAllStudentsRecordsTable(studentsList, 'NDASSS All Students Registry');
+                    setExportNotification(`Sent ${studentsList.length} student records to printer.`);
+                    setTimeout(() => setExportNotification(null), 4000);
+                  }}
+                  className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
+                  title="Print all student records table"
+                >
+                  <i className="fas fa-print text-blue-200"></i> Print Records
+                </button>
+                <button
+                  onClick={() => {
+                    downloadAllStudentsRecordsCsv(studentsList);
+                    setExportNotification(`Downloaded all ${studentsList.length} student registry records in CSV format.`);
+                    setTimeout(() => setExportNotification(null), 4000);
+                  }}
+                  className="px-3 py-1.5 bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
+                  title="Download all student records with bio-data, class assignments, and joined curriculum subjects"
+                >
+                  <i className="fas fa-download"></i> All Students Records (CSV)
                 </button>
 
                 {/* Bulk Export Wizard Modal Trigger */}
@@ -1283,7 +1950,7 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {MOCK_STUDENTS.map((st, i) => {
+                  {studentsList.map((st, i) => {
                     const isSelected = selectedStudentIds.includes(st.id);
                     return (
                       <tr
@@ -1305,7 +1972,25 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                         </td>
                         <td className="py-2 px-2 font-mono font-bold text-emerald-400 border-r border-slate-800">{st.studentNo}</td>
                         <td className="py-2 px-2 font-bold text-white uppercase border-r border-slate-800 whitespace-nowrap">
-                          {st.lastName}, {st.firstName}
+                          <div className="flex items-center gap-1.5 justify-between">
+                            <span>{st.lastName}, {st.firstName}</span>
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => setEditingStudent(st)}
+                                className="text-slate-400 hover:text-orange-400 text-[10px] p-0.5 rounded cursor-pointer transition-colors"
+                                title={`Update details for ${st.firstName} ${st.lastName}`}
+                              >
+                                <i className="fas fa-edit"></i>
+                              </button>
+                              <button
+                                onClick={() => setDeletingStudent(st)}
+                                className="text-slate-400 hover:text-rose-400 text-[10px] p-0.5 rounded cursor-pointer transition-colors"
+                                title={`Remove / Delete ${st.firstName} ${st.lastName}`}
+                              >
+                                <i className="fas fa-trash-alt"></i>
+                              </button>
+                            </div>
+                          </div>
                         </td>
                         {subjectsData.map((s, idx) => {
                           const score = st.studentNo === '2413' ? s.termTotal : Math.max(50, s.termTotal - (i * 3));
@@ -1362,17 +2047,25 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                   <select
                     value={selectedStudent.id}
                     onChange={(e) => {
-                      const found = MOCK_STUDENTS.find(s => s.id === e.target.value);
+                      const found = studentsList.find(s => s.id === e.target.value);
                       if (found) handleSelectStudentWithScores(found);
                     }}
                     className="bg-slate-950 border border-slate-700 text-white text-xs font-bold rounded-xl px-3 py-2 outline-none focus:border-emerald-500 w-full md:w-64"
                   >
-                    {MOCK_STUDENTS.map((st) => (
+                    {studentsList.map((st) => (
                       <option key={st.id} value={st.id}>
                         {st.studentNo} - {st.lastName}, {st.firstName} ({st.formClass})
                       </option>
                     ))}
                   </select>
+                  <button
+                    onClick={() => setIsManageSubjectsModalOpen(true)}
+                    className="px-3 py-2 bg-teal-700 hover:bg-teal-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm shadow-teal-700/20"
+                    title="Manage curriculum subjects for this candidate"
+                  >
+                    <i className="fas fa-book-open"></i>
+                    <span>Manage Subjects</span>
+                  </button>
                 </div>
               </div>
 
@@ -1496,7 +2189,14 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
               <div className="border-b-2 border-slate-900 pb-2 mb-3 text-center">
                 <div className="flex items-center justify-between gap-3">
                   <div className="w-20 h-20 overflow-hidden p-1 flex items-center justify-center">
-                    <img src="/assets/img/nda-logo.png" alt="NDA Logo" className="w-full h-full object-contain" />
+                    <img 
+                      src={NDA_LOGO_BASE64} 
+                      alt="NDA Logo" 
+                      className="w-full h-full object-contain" 
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = '/assets/img/nda-logo.png';
+                      }}
+                    />
                   </div>
                   <div className="flex-1">
                     <h2 className="text-xl sm:text-2xl font-black tracking-wide text-slate-900 uppercase">
@@ -2128,6 +2828,806 @@ export const ExamOfficerDashboard: React.FC<ExamOfficerDashboardProps> = ({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: BULK CANDIDATE REGISTRATION VIA CSV */}
+      <BulkStudentRegistrationModal
+        isOpen={isBulkStudentModalOpen}
+        onClose={() => setIsBulkStudentModalOpen(false)}
+        currentSession="2020/21"
+        currentTerm="SECOND"
+        schoolCode="NDASSS"
+        onImportSuccess={(importedStudents) => {
+          setStudentsList((prev) => [...prev, ...importedStudents]);
+          
+          // Log audit action
+          const bulkAudit: AuditLogEntry = {
+            id: `aud-bulk-${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            user: 'Dr. A. S. Danjuma',
+            userId: 'usr-exam-01',
+            role: 'Exam Officer',
+            department: 'Examination',
+            action: 'CREATE',
+            recordTable: 'students',
+            recordId: `bulk-count-${importedStudents.length}`,
+            reason: `Batch registered ${importedStudents.length} candidate students via CSV bulk import parser.`,
+            status: 'SUCCESS',
+            ipAddress: '192.168.10.42'
+          };
+          setAuditList((prev) => [bulkAudit, ...prev]);
+
+          setExportNotification(`Successfully bulk enrolled ${importedStudents.length} candidate students into Examination Roster!`);
+          setTimeout(() => setExportNotification(null), 4000);
+        }}
+      />
+
+      {/* MODAL: ANNUAL CLASS PROMOTION & STUDENT PUSH (JSS 1→2, 2→3, 3→SSS 1, SSS 1→2, SSS 2→3) */}
+      <StudentPromotionModal
+        isOpen={isPromotionModalOpen}
+        onClose={() => setIsPromotionModalOpen(false)}
+        students={studentsList}
+        currentSession="2026/2027"
+        currentTerm="First Term"
+        onPromotionComplete={(updatedRoster, results) => {
+          setStudentsList(updatedRoster);
+
+          const promoAudit: AuditLogEntry = {
+            id: `aud-promo-${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            user: 'Dr. A. S. Danjuma',
+            userId: 'usr-exam-01',
+            role: 'Exam Officer',
+            department: 'Examination',
+            action: 'UPDATE',
+            recordTable: 'students',
+            recordId: `promoted-${results.length}`,
+            reason: `Executed cohort promotion for ${results.length} students (JSS 1→2, JSS 2→3, JSS 3→SSS 1, SSS 1→2, SSS 2→3) with new IDs (e.g. NDASSS/JSS2A/001) and matched subjects.`,
+            status: 'SUCCESS',
+            ipAddress: '192.168.10.42'
+          };
+          setAuditList((prev) => [promoAudit, ...prev]);
+
+          setExportNotification(`Successfully promoted ${results.length} students to their next classes and joined their curriculum subjects!`);
+          setTimeout(() => setExportNotification(null), 5000);
+        }}
+      />
+
+      {/* MODAL: COMPREHENSIVE ALL CANDIDATES & STUDENTS REGISTRY PREVIEW */}
+      <AllStudentsRecordsPreviewModal
+        isOpen={isRecordsPreviewOpen}
+        onClose={() => setIsRecordsPreviewOpen(false)}
+        students={studentsList}
+        currentSession="2020/21"
+        currentTerm="SECOND"
+        roleTitle="Examination Officer"
+        onUpdateStudent={handleUpdateStudent}
+        onDeleteStudent={handleDeleteStudent}
+      />
+
+      {/* MODAL: UPDATE CANDIDATE RECORD */}
+      <UpdateStudentModal
+        isOpen={!!editingStudent}
+        onClose={() => setEditingStudent(null)}
+        student={editingStudent}
+        onUpdate={handleUpdateStudent}
+      />
+
+      {/* MODAL: CONFIRM REMOVE CANDIDATE */}
+      <DeleteStudentModal
+        isOpen={!!deletingStudent}
+        onClose={() => setDeletingStudent(null)}
+        student={deletingStudent}
+        onConfirmDelete={handleDeleteStudent}
+      />
+
+      {/* MODAL 1: ENROLL NEW CANDIDATE & CONFIGURE SUBJECTS */}
+      {isAddStudentModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
+          <div
+            className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-800 flex items-start justify-between gap-4 bg-slate-950/60 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white text-lg font-black shadow-md shadow-emerald-900/30">
+                  <i className="fas fa-user-plus"></i>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-white">Enroll Candidate & Configure Curriculum</h3>
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-extrabold px-2 py-0.5 rounded-full border border-emerald-500/30">
+                      EXAM OFFICE REGISTRY
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Official NDA Secondary School Examination Department &bull; Candidate bio-data & subject assignments
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAddStudentModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors cursor-pointer shrink-0"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleAddStudentSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6 text-left">
+              {/* SECTION 1: BIO-DATA & CANDIDATE REGISTRATION */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-2">
+                    <i className="fas fa-id-badge text-emerald-400"></i>
+                    <span>1. Candidate Bio-Data & Demographics</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-400">* Required fields</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                      First Name <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Fatima, Ibrahim"
+                      value={newStudentForm.firstName}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, firstName: e.target.value })}
+                      required
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                      Last / Surname <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Abdullahi, Mohammed"
+                      value={newStudentForm.lastName}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, lastName: e.target.value })}
+                      required
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-bold text-slate-300">
+                        Admission No <span className="text-rose-400">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setNewStudentForm({ ...newStudentForm, studentNo: `24${Math.floor(25 + Math.random() * 60)}` })}
+                        className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer underline"
+                      >
+                        Auto-generate
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="e.g. 2428"
+                      value={newStudentForm.studentNo}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, studentNo: e.target.value })}
+                      required
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Gender</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['Male', 'Female'] as const).map((g) => (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => setNewStudentForm({ ...newStudentForm, gender: g })}
+                          className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+                            newStudentForm.gender === g
+                              ? 'bg-emerald-600 text-white shadow-sm'
+                              : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800'
+                          }`}
+                        >
+                          {g === 'Male' ? '👦 Male' : '👧 Female'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Class / Form</label>
+                    <select
+                      value={newStudentForm.formClass}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, formClass: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    >
+                      <option value="SSS1 B">SSS 1B</option>
+                      <option value="SSS1 A">SSS 1A</option>
+                      <option value="SSS2 A">SSS 2A</option>
+                      <option value="SSS2 B">SSS 2B</option>
+                      <option value="SSS3 Science">SSS 3 Science</option>
+                      <option value="SSS3 Commercial">SSS 3 Commercial</option>
+                      <option value="SSS3 Arts">SSS 3 Arts</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Academic Arm / Stream</label>
+                    <select
+                      value={newStudentForm.arm}
+                      onChange={(e) => setNewStudentForm({
+                        ...newStudentForm,
+                        arm: e.target.value,
+                        stream: `${e.target.value} Stream`
+                      })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    >
+                      <option value="Science">Science Arm</option>
+                      <option value="Commercial">Commercial Arm</option>
+                      <option value="Arts">Arts & Humanities</option>
+                      <option value="General">General Secondary</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Cadet House</label>
+                    <select
+                      value={newStudentForm.house}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, house: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    >
+                      <option value="Dalet">Dalet House</option>
+                      <option value="Mogadishu">Mogadishu House</option>
+                      <option value="Ribadu">Ribadu House</option>
+                      <option value="Abacha">Abacha House</option>
+                      <option value="Burma">Burma House</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Session & Term</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={newStudentForm.session}
+                        onChange={(e) => setNewStudentForm({ ...newStudentForm, session: e.target.value })}
+                        className="bg-slate-950 border border-slate-700 rounded-xl px-2 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                      >
+                        <option value="2020/21">2020/21</option>
+                        <option value="2026/27">2026/27</option>
+                      </select>
+                      <select
+                        value={newStudentForm.term}
+                        onChange={(e) => setNewStudentForm({ ...newStudentForm, term: e.target.value })}
+                        className="bg-slate-950 border border-slate-700 rounded-xl px-2 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                      >
+                        <option value="SECOND">Second</option>
+                        <option value="FIRST">First</option>
+                        <option value="THIRD">Third</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Age</label>
+                    <input
+                      type="number"
+                      min={10}
+                      max={22}
+                      value={newStudentForm.age}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, age: Number(e.target.value) || 16 })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Guardian Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Alh. Abdullahi Bello"
+                      value={newStudentForm.guardianName}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, guardianName: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Guardian Phone / WhatsApp</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. +234 803 123 4567"
+                      value={newStudentForm.guardianPhone}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, guardianPhone: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Sponsor / Branch</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Nigerian Army, Parent"
+                      value={newStudentForm.sponsor}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, sponsor: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: SUBJECT CURRICULUM SETUP */}
+              <div className="space-y-3 pt-4 border-t border-slate-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-2">
+                      <i className="fas fa-book-open text-emerald-400"></i>
+                      <span>2. Curriculum & Enrolled Subjects</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Select curriculum stream or customize subjects for this candidate (WAEC standard: 8–10 subjects)
+                    </p>
+                  </div>
+
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold border self-start sm:self-auto ${
+                    newStudentForm.selectedSubjects.length >= 7
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  }`}>
+                    {newStudentForm.selectedSubjects.length} Subjects Enrolled
+                  </span>
+                </div>
+
+                {/* Curriculum Preset Selector Tabs */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { key: 'science', label: 'Senior Science', count: CURRICULUM_PRESETS.science.subjects.length },
+                    { key: 'commercial', label: 'Commercial & Business', count: CURRICULUM_PRESETS.commercial.subjects.length },
+                    { key: 'arts', label: 'Arts & Humanities', count: CURRICULUM_PRESETS.arts.subjects.length },
+                    { key: 'general', label: 'General Core', count: CURRICULUM_PRESETS.general.subjects.length }
+                  ].map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => {
+                        const target = CURRICULUM_PRESETS[preset.key];
+                        if (target) {
+                          setNewStudentForm({
+                            ...newStudentForm,
+                            selectedCurriculumPreset: preset.key as any,
+                            selectedSubjects: [...target.subjects]
+                          });
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                        newStudentForm.selectedCurriculumPreset === preset.key
+                          ? 'bg-emerald-950/50 border-emerald-500 text-white shadow-sm ring-1 ring-emerald-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="font-bold text-xs truncate">{preset.label}</div>
+                      <div className="text-[10px] text-slate-400">{preset.count} standard subjects</div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Interactive Subject Selection Checklist */}
+                <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                    <span>Available Secondary School Subjects (Check to Enroll):</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allStandard = [...STANDARD_SECONDARY_SUBJECTS];
+                        setNewStudentForm({
+                          ...newStudentForm,
+                          selectedSubjects: allStandard,
+                          selectedCurriculumPreset: 'custom'
+                        });
+                      }}
+                      className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer underline"
+                    >
+                      Select All Standard
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
+                    {STANDARD_SECONDARY_SUBJECTS.map((subName) => {
+                      const isSelected = newStudentForm.selectedSubjects.includes(subName);
+                      return (
+                        <label
+                          key={subName}
+                          className={`flex items-center gap-2 p-2 rounded-xl text-xs font-semibold border cursor-pointer select-none transition-all ${
+                            isSelected
+                              ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-200'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {
+                              const updated = isSelected
+                                ? newStudentForm.selectedSubjects.filter((s) => s !== subName)
+                                : [...newStudentForm.selectedSubjects, subName];
+                              setNewStudentForm({
+                                ...newStudentForm,
+                                selectedSubjects: updated,
+                                selectedCurriculumPreset: 'custom'
+                              });
+                            }}
+                            className="w-3.5 h-3.5 rounded text-emerald-500 bg-slate-950 border-slate-700 focus:ring-emerald-500 accent-emerald-500"
+                          />
+                          <span className="truncate">{subName}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {/* Add Custom Subject Input */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Add custom or vocational subject (e.g. Technical Drawing, Music)..."
+                      value={newStudentForm.customSubjectInput}
+                      onChange={(e) => setNewStudentForm({ ...newStudentForm, customSubjectInput: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const val = newStudentForm.customSubjectInput.trim();
+                          if (val && !newStudentForm.selectedSubjects.includes(val)) {
+                            setNewStudentForm({
+                              ...newStudentForm,
+                              selectedSubjects: [...newStudentForm.selectedSubjects, val],
+                              customSubjectInput: '',
+                              selectedCurriculumPreset: 'custom'
+                            });
+                          }
+                        }
+                      }}
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = newStudentForm.customSubjectInput.trim();
+                        if (val && !newStudentForm.selectedSubjects.includes(val)) {
+                          setNewStudentForm({
+                            ...newStudentForm,
+                            selectedSubjects: [...newStudentForm.selectedSubjects, val],
+                            customSubjectInput: '',
+                            selectedCurriculumPreset: 'custom'
+                          });
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-colors whitespace-nowrap"
+                    >
+                      <i className="fas fa-plus mr-1"></i> Add Subject
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: ASSESSMENT BASELINE SCORES */}
+              <div className="space-y-3 pt-4 border-t border-slate-800">
+                <h4 className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-2">
+                  <i className="fas fa-clipboard-check text-emerald-400"></i>
+                  <span>3. Terminal Assessment Baseline</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label
+                    onClick={() => setNewStudentForm({ ...newStudentForm, baselineScoreOption: 'realistic' })}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
+                      newStudentForm.baselineScoreOption === 'realistic'
+                        ? 'bg-emerald-950/40 border-emerald-500 shadow-sm'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="scoreOption"
+                      checked={newStudentForm.baselineScoreOption === 'realistic'}
+                      onChange={() => {}}
+                      className="mt-0.5 text-emerald-500 accent-emerald-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-white">Generate Realistic Terminal Marks</div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Populates authentic CAT 1–4 and exam scores. Dossier and broadsheet entries are immediately ready.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label
+                    onClick={() => setNewStudentForm({ ...newStudentForm, baselineScoreOption: 'blank' })}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
+                      newStudentForm.baselineScoreOption === 'blank'
+                        ? 'bg-emerald-950/40 border-emerald-500 shadow-sm'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="scoreOption"
+                      checked={newStudentForm.baselineScoreOption === 'blank'}
+                      onChange={() => {}}
+                      className="mt-0.5 text-emerald-500 accent-emerald-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-white">Start with Blank Marks (0 / 100)</div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Subjects enrolled with 0 marks, ready for Exam Officer continuous assessment and exam score moderation.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Form Submission Actions */}
+              <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStudentModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-900/40 cursor-pointer active:scale-95 transition-all"
+                >
+                  <i className="fas fa-check-circle text-emerald-200"></i>
+                  <span>Enroll Candidate & Register {newStudentForm.selectedSubjects.length} Subjects</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: MANAGE SUBJECTS FOR ACTIVE CANDIDATE */}
+      {isManageSubjectsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
+          <div
+            className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-800 flex items-start justify-between gap-4 bg-slate-950/60 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-teal-600 flex items-center justify-center text-white text-lg font-black shadow-md shadow-teal-900/30">
+                  <i className="fas fa-book-reader"></i>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-white">Candidate Curriculum Management</h3>
+                    <span className="text-[10px] bg-teal-500/20 text-teal-300 font-extrabold px-2 py-0.5 rounded-full border border-teal-500/30">
+                      ACTIVE DOSSIER
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Candidate: <strong className="text-white uppercase">{selectedStudent.lastName}, {selectedStudent.firstName}</strong> &bull; Adm No: <span className="font-mono text-emerald-400 font-bold">{selectedStudent.studentNo}</span> &bull; {selectedStudent.formClass}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsManageSubjectsModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors cursor-pointer shrink-0"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6 text-left">
+              {/* CURRENTLY ENROLLED SUBJECTS TABLE */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase text-teal-400 tracking-wider flex items-center gap-2">
+                    <i className="fas fa-list-check text-teal-400"></i>
+                    <span>Currently Enrolled Subjects ({subjectsData.length})</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-400">All subjects count towards terminal broadsheet</span>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-800 rounded-2xl bg-slate-950/60">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 font-bold uppercase text-[10px] border-b border-slate-800">
+                      <tr>
+                        <th className="py-2.5 px-3">#</th>
+                        <th className="py-2.5 px-3">Subject Name</th>
+                        <th className="py-2.5 px-2 text-center">CAT 1-4 (40)</th>
+                        <th className="py-2.5 px-2 text-center">Exam (60)</th>
+                        <th className="py-2.5 px-2 text-center">Total (100)</th>
+                        <th className="py-2.5 px-2 text-center">Grade</th>
+                        <th className="py-2.5 px-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {subjectsData.map((s, idx) => (
+                        <tr key={idx} className="hover:bg-slate-900/50 transition-colors">
+                          <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
+                          <td className="py-2.5 px-3 font-bold text-white">{s.subject}</td>
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-300">{s.catTotal}</td>
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-300">{s.examMarks}</td>
+                          <td className="py-2.5 px-2 text-center font-mono font-bold text-emerald-400">{s.termTotal}</td>
+                          <td className="py-2.5 px-2 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                              s.grade.startsWith('A') || s.grade.startsWith('B')
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : s.grade.startsWith('C')
+                                ? 'bg-blue-500/20 text-blue-300'
+                                : 'bg-amber-500/20 text-amber-300'
+                            }`}>
+                              {s.grade}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSubjectFromCandidate(s.subject)}
+                              disabled={subjectsData.length <= 1}
+                              className={`px-2 py-1 rounded text-[11px] font-bold transition-colors cursor-pointer ${
+                                subjectsData.length > 1
+                                  ? 'text-rose-400 hover:text-rose-300 hover:bg-rose-950/40'
+                                  : 'text-slate-600 cursor-not-allowed'
+                              }`}
+                              title={subjectsData.length <= 1 ? 'Minimum 1 subject required' : `Deregister ${s.subject}`}
+                            >
+                              <i className="fas fa-trash-alt mr-1"></i> Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* REGISTER NEW SUBJECT FORM */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+                <div>
+                  <h4 className="text-xs font-black uppercase text-emerald-400 tracking-wider flex items-center gap-2">
+                    <i className="fas fa-plus-circle text-emerald-400"></i>
+                    <span>Register New Subject to Candidate</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Select a subject not yet enrolled or type a custom subject name with terminal baseline marks
+                  </p>
+                </div>
+
+                <form onSubmit={handleAddSubjectToCandidate} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Standard Subject</label>
+                      <select
+                        value={newSubjectForm.subjectName}
+                        onChange={(e) => setNewSubjectForm({ ...newSubjectForm, subjectName: e.target.value, customSubjectName: '' })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                      >
+                        {STANDARD_SECONDARY_SUBJECTS
+                          .filter((sub) => !subjectsData.some((s) => s.subject.toLowerCase() === sub.toLowerCase()))
+                          .map((sub) => (
+                            <option key={sub} value={sub}>{sub}</option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Or Enter Custom Subject Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Arabic, Further Mathematics..."
+                        value={newSubjectForm.customSubjectName}
+                        onChange={(e) => setNewSubjectForm({ ...newSubjectForm, customSubjectName: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Initial Marks Inputs */}
+                  <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800/80 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-300 block">Initial Marks (Optional - defaults to realistic baseline):</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">CAT 1 (10)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          value={newSubjectForm.cat1}
+                          onChange={(e) => setNewSubjectForm({ ...newSubjectForm, cat1: Number(e.target.value) })}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-xs text-white font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">CAT 2 (10)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          value={newSubjectForm.cat2}
+                          onChange={(e) => setNewSubjectForm({ ...newSubjectForm, cat2: Number(e.target.value) })}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-xs text-white font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">CAT 3 (10)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          value={newSubjectForm.cat3}
+                          onChange={(e) => setNewSubjectForm({ ...newSubjectForm, cat3: Number(e.target.value) })}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-xs text-white font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">CAT 4 (10)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={10}
+                          value={newSubjectForm.cat4}
+                          onChange={(e) => setNewSubjectForm({ ...newSubjectForm, cat4: Number(e.target.value) })}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-xs text-white font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Exam (60)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={60}
+                          value={newSubjectForm.examMarks}
+                          onChange={(e) => setNewSubjectForm({ ...newSubjectForm, examMarks: Number(e.target.value) })}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-xs text-white font-mono text-center font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Preview computed total & grade */}
+                    {(() => {
+                      const totalCat = Math.min(40, Number(newSubjectForm.cat1) + Number(newSubjectForm.cat2) + Number(newSubjectForm.cat3) + Number(newSubjectForm.cat4));
+                      const termTot = totalCat + Math.min(60, Number(newSubjectForm.examMarks));
+                      const { grade, remark } = computeGrade(termTot);
+                      return (
+                        <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800 text-slate-300">
+                          <span>Computed Preview: Total <strong>{termTot}/100</strong> (CAT: {totalCat}, Exam: {newSubjectForm.examMarks})</span>
+                          <span className="font-bold text-emerald-400">Grade: {grade} ({remark})</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-900/30 transition-all active:scale-95"
+                    >
+                      <i className="fas fa-plus"></i>
+                      <span>Register Subject to {selectedStudent.firstName}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-800 flex justify-end shrink-0 bg-slate-950/40">
+              <button
+                type="button"
+                onClick={() => setIsManageSubjectsModalOpen(false)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs cursor-pointer transition-colors"
+              >
+                Close / Done
+              </button>
             </div>
           </div>
         </div>

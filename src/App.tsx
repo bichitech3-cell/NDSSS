@@ -14,18 +14,21 @@ import { Dashboard } from './components/Dashboard';
 import { ExamOfficerDashboard } from './components/ExamOfficerDashboard';
 import { BursarDashboard } from './components/BursarDashboard';
 import { PtaSecretaryDashboard } from './components/PtaSecretaryDashboard';
-import { UserRole } from './types';
+import { StudentPortalView } from './components/StudentPortalView';
+import { UserRole, Student } from './types';
 import { SYSTEM_USERS, UserAccount } from './services/securityService';
+import { MOCK_STUDENTS } from './data/mockData';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<
-    'login' | 'forgot-pin' | 'dashboard' | 'exam_officer' | 'bursar' | 'pta_secretary'
+    'login' | 'forgot-pin' | 'dashboard' | 'exam_officer' | 'bursar' | 'pta_secretary' | 'student'
   >('login');
   const [currentUser, setCurrentUser] = useState<UserAccount>(SYSTEM_USERS[0]);
+  const [currentStudent, setCurrentStudent] = useState<Student>(MOCK_STUDENTS[0]);
   const [isRecoverModalOpen, setIsRecoverModalOpen] = useState(false);
   const [policyModalType, setPolicyModalType] = useState<'terms' | 'privacy' | null>(null);
 
-  const handleLoginSuccess = (role: UserRole, username: string) => {
+  const handleLoginSuccess = (role: UserRole, username: string, studentData?: Student) => {
     const matched =
       SYSTEM_USERS.find((u) => u.role === role) ||
       SYSTEM_USERS.find((u) => u.username.toLowerCase() === username.toLowerCase()) ||
@@ -33,7 +36,12 @@ export default function App() {
 
     setCurrentUser(matched);
 
-    if (role === 'exam_officer') {
+    if (role === 'student') {
+      if (studentData) {
+        setCurrentStudent(studentData);
+      }
+      setCurrentView('student');
+    } else if (role === 'exam_officer') {
       setCurrentView('exam_officer');
     } else if (role === 'bursar') {
       setCurrentView('bursar');
@@ -50,7 +58,9 @@ export default function App() {
 
   const switchToAccount = (acc: UserAccount) => {
     setCurrentUser(acc);
-    if (acc.role === 'exam_officer') {
+    if (acc.role === 'student') {
+      setCurrentView('student');
+    } else if (acc.role === 'exam_officer') {
       setCurrentView('exam_officer');
     } else if (acc.role === 'bursar') {
       setCurrentView('bursar');
@@ -140,6 +150,20 @@ export default function App() {
         >
           Admin Portal
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCurrentView('student');
+          }}
+          className={`px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+            currentView === 'student'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+              : 'text-indigo-300 hover:text-white hover:bg-indigo-950/70 border border-indigo-500/30'
+          }`}
+          title="Student Self-Service Portal (Report Sheet & Fees Only)"
+        >
+          Student Portal
+        </button>
       </div>
 
       {/* Main View Router */}
@@ -158,6 +182,13 @@ export default function App() {
 
       {currentView === 'forgot-pin' && (
         <ForgotStudentPinView onBackToLogin={() => setCurrentView('login')} />
+      )}
+
+      {currentView === 'student' && (
+        <StudentPortalView
+          student={currentStudent}
+          onLogout={handleLogout}
+        />
       )}
 
       {currentView === 'exam_officer' && (

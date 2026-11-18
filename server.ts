@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import authRoutes from './src/server/routes/authRoutes';
 import examRoutes from './src/server/routes/examRoutes';
-import financeRoutes, { handleStripeWebhook } from './src/server/routes/financeRoutes';
+import financeRoutes from './src/server/routes/financeRoutes';
 import ptaRoutes from './src/server/routes/ptaRoutes';
 import studentRoutes from './src/server/routes/studentRoutes';
 import attendanceRoutes from './src/server/routes/attendanceRoutes';
@@ -13,17 +13,10 @@ dotenv.config();
 
 const app = express();
 
-// 1. Stripe webhook requires raw Buffer for cryptographic signature verification
-app.post(
-  '/api/finance/stripe-webhook',
-  express.raw({ type: 'application/json' }),
-  handleStripeWebhook
-);
-
-// 2. Standard JSON body parser for all other REST APIs
+// Standard JSON body parser for REST APIs
 app.use(express.json());
 
-// 3. Mount secure, rate-limited and tenant-scoped API routes
+// Mount secure, rate-limited and tenant-scoped API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/exam', examRoutes);
 app.use('/api/finance', financeRoutes);

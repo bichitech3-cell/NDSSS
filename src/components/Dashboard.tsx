@@ -1,8 +1,15 @@
 import React, { useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import { DEMO_SCHOOLS, MOCK_STUDENTS, MOCK_FEES, MOCK_ANNOUNCEMENTS, FATIMA_SUBJECTS } from '../data/mockData';
 import { UserRole, Student, FeeTransaction, Announcement } from '../types';
 import { AddStudentModal } from './AddStudentModal';
+import { BulkStudentRegistrationModal } from './BulkStudentRegistrationModal';
+import { StudentPromotionModal } from './StudentPromotionModal';
+import { AllStudentsRecordsPreviewModal } from './AllStudentsRecordsPreviewModal';
+import { UpdateStudentModal } from './UpdateStudentModal';
+import { DeleteStudentModal } from './DeleteStudentModal';
+import { ClassArmSelectorBar } from './ClassArmSelectorBar';
+import { matchesClassAndArmFilter } from '../services/classArmFilterService';
 import { DepartmentAuthorizationView } from './DepartmentAuthorizationView';
 import { SYSTEM_USERS, UserAccount } from '../services/securityService';
 import {
@@ -11,8 +18,12 @@ import {
   downloadBulkZipArchive,
   printSingleReportSheet,
   printBulkReportSheets,
-  getStudentSubjectsData
+  getStudentSubjectsData,
+  downloadAllStudentsRecordsCsv,
+  printAllStudentsRecordsTable,
+  printAllStudentsRecordsCsvText
 } from '../services/reportSheetExportService';
+import { NDA_LOGO_BASE64 } from '../services/ndaLogoBase64';
 
 interface DashboardProps {
   role: UserRole;
@@ -37,10 +48,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [selectedSchool, setSelectedSchool] = useState(DEMO_SCHOOLS[0].code);
   const [searchStudent, setSearchStudent] = useState('');
   const [selectedForm, setSelectedForm] = useState('All');
+  const [selectedArm, setSelectedArm] = useState('All');
   const [studentsList, setStudentsList] = useState<Student[]>(MOCK_STUDENTS);
   const [feesList, setFeesList] = useState<FeeTransaction[]>(MOCK_FEES);
   const [announcementsList, setAnnouncementsList] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
+  const [isBulkStudentModalOpen, setIsBulkStudentModalOpen] = useState(false);
+  const [isPromotionModalOpen, setIsPromotionModalOpen] = useState(false);
+  const [isRecordsPreviewOpen, setIsRecordsPreviewOpen] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [deletingStudent, setDeletingStudent] = useState<Student | null>(null);
 
   // Modal states
   const [viewingReportCardStudent, setViewingReportCardStudent] = useState<Student | null>(MOCK_STUDENTS[0]);
@@ -75,8 +92,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       s.firstName.toLowerCase().includes(searchStudent.toLowerCase()) ||
       s.lastName.toLowerCase().includes(searchStudent.toLowerCase()) ||
       s.studentNo.toLowerCase().includes(searchStudent.toLowerCase());
-    const matchesForm = selectedForm === 'All' || s.formClass.includes(selectedForm);
-    return matchesSearch && matchesForm;
+    const matchesClassArm = matchesClassAndArmFilter(s, selectedForm, selectedArm);
+    return matchesSearch && matchesClassArm;
   });
 
   const handleRecordPayment = (e: React.FormEvent) => {
@@ -132,6 +149,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleAddStudent = (studentData: Omit<Student, 'id'>) => {
     const newStudent: Student = { ...studentData, id: 'stu-' + Date.now() };
     setStudentsList([...studentsList, newStudent]);
+  };
+
+  const handleUpdateStudent = (updated: Student) => {
+    setStudentsList((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    setExportNotification(`Updated details for ${updated.firstName} ${updated.lastName} (${updated.studentNo})`);
+    setTimeout(() => setExportNotification(null), 4000);
+  };
+
+  const handleDeleteStudent = (studentId: string) => {
+    const target = studentsList.find((s) => s.id === studentId);
+    setStudentsList((prev) => prev.filter((s) => s.id !== studentId));
+    setExportNotification(`Removed student ${target ? `${target.firstName} ${target.lastName}` : ''} from registry.`);
+    setTimeout(() => setExportNotification(null), 4000);
   };
 
   return (
@@ -415,7 +445,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="font-black text-white text-base">Portal Notices</h4>
                     <span className="text-[11px] font-bold text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
-                      Live FSMS
+                      Live NDASSS
                     </span>
                   </div>
                   <div className="space-y-3">
@@ -450,7 +480,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <h4 className="font-black text-white text-base mb-4">Academic Performance Trends</h4>
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={[
+                  <BarChart data={[
                     { term: 'Term 1', Mathematics: 75, English: 80, Science: 70 },
                     { term: 'Term 2', Mathematics: 82, English: 78, Science: 75 },
                     { term: 'Term 3', Mathematics: 85, English: 85, Science: 80 },
@@ -462,10 +492,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <YAxis stroke="#94a3b8" fontSize={12} domain={[0, 100]} />
                     <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', fontSize: '12px', color: '#fff' }} />
                     <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                    <Line type="monotone" dataKey="Mathematics" stroke="#f97316" strokeWidth={3} dot={{ fill: '#f97316', r: 5 }} />
-                    <Line type="monotone" dataKey="English" stroke="#3b82f6" strokeWidth={3} dot={{ fill: '#3b82f6', r: 5 }} />
-                    <Line type="monotone" dataKey="Science" stroke="#0ea5e9" strokeWidth={3} dot={{ fill: '#0ea5e9', r: 5 }} />
-                  </LineChart>
+                    <Bar dataKey="Mathematics" fill="#f97316" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="English" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Science" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
@@ -480,24 +510,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <h3 className="text-lg font-black text-white">Student Enrollment & Bio-Data</h3>
                 <p className="text-xs text-slate-400">Manage student records, stream allocations, guardian contacts, and recovery PINs</p>
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                {/* Preview All Student Records Modal Trigger */}
+                <button
+                  onClick={() => setIsRecordsPreviewOpen(true)}
+                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+                  title="Preview all student records, view joined subjects, inspect live CSV stream, and manage prints"
+                >
+                  <i className="fas fa-eye text-emerald-200"></i>
+                  <span>Preview All Records</span>
+                </button>
+
+                {/* Print All Records in CSV Table Format */}
                 <button
                   onClick={() => {
-                    const headers = ['First Name', 'Last Name', 'Admission No', 'Class', 'Guardian', 'Phone'];
-                    const csvContent = [
-                      headers.join(','),
-                      ...studentsList.map(s => [s.firstName, s.lastName, s.studentNo, s.formClass, s.guardianName, s.guardianPhone].join(','))
-                    ].join('\n');
-                    const blob = new Blob([csvContent], { type: 'text/csv' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'students_list.csv';
-                    a.click();
+                    const toPrint = filteredStudents.length > 0 ? filteredStudents : studentsList;
+                    printAllStudentsRecordsTable(toPrint, `NDASSS Student Registry (${toPrint.length} Students)`);
+                    setExportNotification(`Sent ${toPrint.length} student records to printer.`);
+                    setTimeout(() => setExportNotification(null), 4000);
                   }}
-                  className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5"
+                  className="px-3.5 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
+                  title="Print complete registry records of all students in formatted table layout"
                 >
-                  <i className="fas fa-file-csv"></i> Export CSV
+                  <i className="fas fa-print text-blue-300"></i>
+                  <span>Print Records</span>
+                </button>
+
+                {/* Download All Records CSV */}
+                <button
+                  onClick={() => {
+                    const toDownload = filteredStudents.length > 0 ? filteredStudents : studentsList;
+                    downloadAllStudentsRecordsCsv(toDownload);
+                    setExportNotification(`Downloaded ${toDownload.length} student records in CSV format.`);
+                    setTimeout(() => setExportNotification(null), 4000);
+                  }}
+                  className="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
+                  title="Download complete registry records of all students in CSV format"
+                >
+                  <i className="fas fa-download text-emerald-400"></i>
+                  <span>Download All Records (CSV)</span>
                 </button>
                 <button
                   onClick={() => setIsAddStudentModalOpen(true)}
@@ -505,26 +556,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 >
                   <i className="fas fa-plus"></i> Add Student
                 </button>
+                <button
+                  onClick={() => setIsBulkStudentModalOpen(true)}
+                  className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
+                  title="Import student cohort via CSV string or file"
+                >
+                  <i className="fas fa-file-import"></i> Bulk Register (CSV)
+                </button>
+                <button
+                  onClick={() => setIsPromotionModalOpen(true)}
+                  className="px-3 py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
+                  title="Push classes forward (JSS 1→2, JSS 2→3, JSS 3→SSS 1, SSS 1→2, SSS 2→3) and join matching curriculum subjects"
+                >
+                  <i className="fas fa-level-up-alt"></i> Push / Promote Cohort
+                </button>
                 <input
                   type="text"
-                  placeholder="Search..."
+                  placeholder="Search student by name or admission no..."
                   value={searchStudent}
                   onChange={(e) => setSearchStudent(e.target.value)}
                   className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 outline-none focus:border-orange-500 flex-1 sm:w-64"
                 />
-                <select
-                  value={selectedForm}
-                  onChange={(e) => setSelectedForm(e.target.value)}
-                  className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-orange-500"
-                >
-                  <option value="All">All Forms</option>
-                  <option value="Form 1">Form 1</option>
-                  <option value="Form 2">Form 2</option>
-                  <option value="Form 3">Form 3</option>
-                  <option value="Form 4">Form 4</option>
-                </select>
               </div>
             </div>
+
+            {/* Quick Stream & Arm Selector Bar (2A, 2B, 2C, 2D, etc.) */}
+            <ClassArmSelectorBar
+              selectedClass={selectedForm}
+              onSelectClass={setSelectedForm}
+              selectedArm={selectedArm}
+              onSelectArm={setSelectedArm}
+              students={studentsList}
+            />
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -550,7 +613,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             className="w-9 h-9 rounded-full object-cover border border-slate-600"
                           />
                           <div>
-                            <p className="font-bold text-white text-xs">{s.firstName} {s.lastName}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-white text-xs">{s.firstName} {s.lastName}</p>
+                              {/* Quick update and delete on each student's name */}
+                              <button
+                                onClick={() => setEditingStudent(s)}
+                                className="text-slate-400 hover:text-orange-400 text-[10px] p-0.5 rounded cursor-pointer transition-colors"
+                                title={`Update details for ${s.firstName} ${s.lastName}`}
+                              >
+                                <i className="fas fa-edit"></i>
+                              </button>
+                              <button
+                                onClick={() => setDeletingStudent(s)}
+                                className="text-slate-400 hover:text-rose-400 text-[10px] p-0.5 rounded cursor-pointer transition-colors"
+                                title={`Remove / Delete ${s.firstName} ${s.lastName}`}
+                              >
+                                <i className="fas fa-trash-alt"></i>
+                              </button>
+                            </div>
                             <p className="text-[10px] text-slate-400">{s.gender} &bull; {s.status}</p>
                           </div>
                         </div>
@@ -583,7 +663,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          <button
+                            onClick={() => setEditingStudent(s)}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-orange-400 hover:text-orange-300 font-bold text-[11px] border border-slate-700 cursor-pointer flex items-center gap-1 transition-colors"
+                            title="Edit & Update Student Details"
+                          >
+                            <i className="fas fa-user-pen"></i> Edit
+                          </button>
+                          <button
+                            onClick={() => setDeletingStudent(s)}
+                            className="px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 hover:text-rose-200 font-bold text-[11px] border border-rose-800/50 cursor-pointer flex items-center gap-1 transition-colors"
+                            title="Remove / Delete Student from Registry"
+                          >
+                            <i className="fas fa-trash-alt"></i> Delete
+                          </button>
                           <button
                             onClick={() => {
                               setViewingReportCardStudent(s);
@@ -841,8 +935,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {/* Header */}
                 <div className="border-b-2 border-slate-900 pb-2 mb-4 text-center">
                   <div className="flex items-center justify-between gap-4">
-                    <div className="w-20 h-20 overflow-hidden p-1">
-                      <img src="/assets/img/nda-logo.png" alt="NDA Logo" className="w-full h-full object-contain" />
+                    <div className="w-20 h-20 overflow-hidden p-1 flex items-center justify-center">
+                      <img 
+                        src={NDA_LOGO_BASE64} 
+                        alt="NDA Logo" 
+                        className="w-full h-full object-contain" 
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = '/assets/img/nda-logo.png';
+                        }}
+                      />
                     </div>
                     <div className="flex-1">
                       <h2 className="text-xl sm:text-2xl font-black tracking-wide text-slate-900 uppercase">
@@ -1158,7 +1259,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     type="text"
                     value={broadcastTitle}
                     onChange={(e) => setBroadcastTitle(e.target.value)}
-                    placeholder="e.g. Term 2 Report Cards Available on FECOMAS Portal"
+                    placeholder="e.g. Term 2 Report Cards Available on Bichitech Portal"
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-orange-500"
                     required
                   />
@@ -1181,10 +1282,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <i className="fas fa-eye text-orange-400"></i> Message Preview:
                   </p>
                   <div className="bg-emerald-950/40 border border-emerald-800/40 p-3 rounded-lg text-emerald-200 font-mono text-[11px] leading-relaxed">
-                    [FECOMAS - {currentSchool.code}]<br />
+                    [Bichitech - {currentSchool.code}]<br />
                     <strong>{broadcastTitle || 'Subject Line'}</strong><br />
                     {broadcastMessage || 'Your announcement message will appear here with student personal token.'}<br />
-                    <span className="text-emerald-400 underline">https://fecomas.com</span>
+                    <span className="text-emerald-400 underline">https://bichitech.com</span>
                   </div>
                 </div>
 
@@ -1232,7 +1333,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
               <h4 className="font-black text-sm uppercase text-slate-900">{currentSchool.name}</h4>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                Official Tuition Fee Receipt &bull; FSMS Reconciled
+                Official Tuition Fee Receipt &bull; Bichitech Reconciled
               </p>
             </div>
 
@@ -1268,7 +1369,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
 
             <div className="text-center text-[10px] text-slate-400 mb-4 italic">
-              Received by {viewingReceipt.recordedBy} &bull; Fecomas School Management System
+              Received by {viewingReceipt.recordedBy} &bull; NDASSS Management System
             </div>
 
             <div className="flex gap-2">
@@ -1296,10 +1397,64 @@ export const Dashboard: React.FC<DashboardProps> = ({
         onAdd={handleAddStudent}
       />
 
+      {/* Bulk Student Registration Modal */}
+      <BulkStudentRegistrationModal
+        isOpen={isBulkStudentModalOpen}
+        onClose={() => setIsBulkStudentModalOpen(false)}
+        schoolCode={selectedSchool}
+        onImportSuccess={(newStudents) => {
+          setStudentsList((prev) => [...prev, ...newStudents]);
+          setExportNotification(`Successfully registered ${newStudents.length} students via CSV bulk import!`);
+          setTimeout(() => setExportNotification(null), 4000);
+        }}
+      />
+
+      {/* Student Class Promotion & Progression Modal */}
+      <StudentPromotionModal
+        isOpen={isPromotionModalOpen}
+        onClose={() => setIsPromotionModalOpen(false)}
+        students={studentsList}
+        currentSession="2026/2027"
+        currentTerm="First Term"
+        onPromotionComplete={(updatedRoster, results) => {
+          setStudentsList(updatedRoster);
+          setExportNotification(`Successfully pushed and promoted ${results.length} students forward with formatted IDs (NDASSS/JSS2A/001...) and joined subjects!`);
+          setTimeout(() => setExportNotification(null), 5000);
+        }}
+      />
+
+      {/* Comprehensive All Students Records Preview & Export Modal */}
+      <AllStudentsRecordsPreviewModal
+        isOpen={isRecordsPreviewOpen}
+        onClose={() => setIsRecordsPreviewOpen(false)}
+        students={studentsList}
+        currentSession="2026/2027"
+        currentTerm="Second Term"
+        roleTitle="School Administrator"
+        onUpdateStudent={handleUpdateStudent}
+        onDeleteStudent={handleDeleteStudent}
+      />
+
+      {/* Edit / Update Student Modal */}
+      <UpdateStudentModal
+        isOpen={!!editingStudent}
+        onClose={() => setEditingStudent(null)}
+        student={editingStudent}
+        onUpdate={handleUpdateStudent}
+      />
+
+      {/* Delete / Remove Student Modal */}
+      <DeleteStudentModal
+        isOpen={!!deletingStudent}
+        onClose={() => setDeletingStudent(null)}
+        student={deletingStudent}
+        onConfirmDelete={handleDeleteStudent}
+      />
+
       {/* Dashboard Footer */}
       <footer className="bg-slate-950 border-t border-slate-800 py-4 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>&copy; Fecomas Tech Solutions 2026 &bull; Fecomas School Management System</span>
+          <span>&copy; Bichitech 2026 &bull; NDASSS Management System</span>
           <div className="flex items-center gap-4 text-slate-400">
             <a
               href="https://wa.me/265993189671"

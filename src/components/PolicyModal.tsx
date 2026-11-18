@@ -15,7 +15,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ type, onClose }) => {
         onClick={(e) => e.stopPropagation()}
         style={{ width: 'min(92vw, 680px)' }}
       >
-        <div className="modal-header-fecomas">
+        <div className="modal-header-bichitech">
           <div className="flex items-center gap-2">
             <i
               className={`fas ${
@@ -43,7 +43,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ type, onClose }) => {
                   1. Acceptance of Terms
                 </h6>
                 <p>
-                  By accessing or utilizing the FECOMAS School Management System (FSMS) portal provided by Fecomas Tech Solutions, participating academic institutions, administrators, educators, guardians, and students agree to adhere to all terms, operational guidelines, and security requirements outlined herein.
+                  By accessing or utilizing the NDASSS Management System portal provided by Bichitech, participating academic institutions, administrators, educators, guardians, and students agree to adhere to all terms, operational guidelines, and security requirements outlined herein.
                 </p>
               </div>
 
@@ -52,7 +52,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ type, onClose }) => {
                   2. Portal User Roles and Credential Security
                 </h6>
                 <p>
-                  Users must safeguard their login credentials and student PINs. Unauthorized sharing of administrative or grade entry privileges is strictly prohibited. Any suspected breach must be reported immediately to school authorities or Fecomas support.
+                  Users must safeguard their login credentials and student PINs. Unauthorized sharing of administrative or grade entry privileges is strictly prohibited. Any suspected breach must be reported immediately to school authorities or Bichitech support.
                 </p>
               </div>
 
@@ -61,7 +61,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ type, onClose }) => {
                   3. Academic Records and Grade Integrity
                 </h6>
                 <p>
-                  All examination scores, continuous assessments, terminal report cards, and attendance logs entered into the FECOMAS platform constitute official institutional records. Tampering, unauthorized alteration, or falsification of grades will result in disciplinary action.
+                  All examination scores, continuous assessments, terminal report cards, and attendance logs entered into the Bichitech platform constitute official institutional records. Tampering, unauthorized alteration, or falsification of grades will result in disciplinary action.
                 </p>
               </div>
 
@@ -70,7 +70,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ type, onClose }) => {
                   4. Tuition and Fee Payment Reconciliations
                 </h6>
                 <p>
-                  Electronic receipts generated through the FECOMAS financial module reflect reconciled mobile money and banking transactions. In cases of discrepancy, official bank deposit slips and provider transaction IDs serve as secondary verification.
+                  Electronic receipts generated through the Bichitech financial module reflect reconciled mobile money and banking transactions. In cases of discrepancy, official bank deposit slips and provider transaction IDs serve as secondary verification.
                 </p>
               </div>
 
@@ -79,7 +79,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ type, onClose }) => {
                   5. Service Availability and Updates
                 </h6>
                 <p>
-                  Fecomas Tech Solutions maintains 99.8% platform uptime. Scheduled maintenance and system enhancements will be broadcast through administrative notices and SMS/WhatsApp channels.
+                  Bichitech maintains 99.8% platform uptime. Scheduled maintenance and system enhancements will be broadcast through administrative notices and SMS/WhatsApp channels.
                 </p>
               </div>
             </>
@@ -90,7 +90,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ type, onClose }) => {
                   1. Information We Collect
                 </h6>
                 <p>
-                  FECOMAS securely processes institutional academic data including student enrollment demographics, attendance records, academic assessments, guardian contact details (phone numbers, WhatsApp handles), and tuition payment records strictly for school administration.
+                  Bichitech securely processes institutional academic data including student enrollment demographics, attendance records, academic assessments, guardian contact details (phone numbers, WhatsApp handles), and tuition payment records strictly for school administration.
                 </p>
               </div>
 
@@ -126,16 +126,16 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ type, onClose }) => {
                   5. Technical Support Contact
                 </h6>
                 <p>
-                  Fecomas Tech Solutions, Lilongwe, Malawi.<br />
+                  Bichitech, Lilongwe, Malawi.<br />
                   Support WhatsApp / Hotline: <strong>+265 993 189 671</strong><br />
-                  Official Systems: <em>https://fecomas.com</em>
+                  Official Systems: <em>https://bichitech.com</em>
                 </p>
               </div>
             </>
           )}
 
           <div className="pt-4 border-t border-slate-200 flex justify-between items-center text-[11px] text-slate-500">
-            <span>&copy; Fecomas Tech Solutions 2026</span>
+            <span>&copy; Bichitech 2026</span>
             <button
               type="button"
               onClick={onClose}

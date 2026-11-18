@@ -1,4 +1,5 @@
 import { Student, SubjectMark, DossierRecord, ExamTimetableEntry, AuditLogEntry, FeeTransaction, Announcement } from '../types';
+import { generateComprehensivePromotedRoster } from '../services/studentPromotionService';
 
 export const DEMO_SCHOOLS = [
   { code: 'NDASSS', name: 'Nigerian Defence Academy Staff Secondary School', district: 'P.M.B. 2109, Kaduna' },
@@ -221,7 +222,8 @@ export const MOCK_STUDENTS: Student[] = [
     securityQuestion2: 'What is your favorite subject?',
     securityAnswer2: 'Mathematics',
     pin: '3318'
-  }
+  },
+  ...generateComprehensivePromotedRoster()
 ];
 
 export const MOCK_TIMETABLE: ExamTimetableEntry[] = [

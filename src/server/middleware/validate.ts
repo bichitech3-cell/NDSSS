@@ -72,20 +72,11 @@ export const UpdateStudentSchema = z.object({
 }).strict();
 
 // 3. Finance & Payments Schemas
-// CRITICAL: Notice that 'amount' is FORBIDDEN here.
-// The server retrieves the canonical price by looking up fee_type_id in the database.
 export const RecordPaymentSchema = z.object({
   student_id: z.string().min(1),
   fee_type_id: z.string().min(1),
-  payment_method: z.enum(['Cash', 'Bank Transfer', 'POS', 'Online/Card']),
+  payment_method: z.enum(['Cash', 'Bank Transfer', 'POS', 'Online/Card', 'Bank Deposit', 'Direct Teller']),
   receipt_no: z.string().min(3),
-}).strict();
-
-export const CreateCheckoutSessionSchema = z.object({
-  fee_type_id: z.string().min(1),
-  student_id: z.string().min(1),
-  success_url: z.string().url(),
-  cancel_url: z.string().url(),
 }).strict();
 
 // 4. Examination Results Schema

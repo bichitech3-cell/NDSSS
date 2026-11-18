@@ -2,11 +2,142 @@ import JSZip from 'jszip';
 import { jsPDF } from 'jspdf';
 import { Student, SubjectMark } from '../types';
 import { FATIMA_SUBJECTS } from '../data/mockData';
+import { generateSubjectMarksForStudent, getSubjectsForClass } from './studentPromotionService';
+import { NDA_LOGO_BASE64 } from './ndaLogoBase64';
 
-// Generate mock/authentic subject marks for any student based on their class position
+export const STANDARD_SECONDARY_SUBJECTS: string[] = [
+  'Mathematics',
+  'English Language',
+  'Civic Education',
+  'Biology',
+  'Chemistry',
+  'Physics',
+  'Further Mathematics',
+  'Economics',
+  'Computer Studies',
+  'Agricultural Science',
+  'Geography',
+  'Catering Craft Practice',
+  'Government',
+  'Literature in English',
+  'Commerce',
+  'Financial Accounting',
+  'Data Processing',
+  'Technical Drawing',
+  'Islamic Studies',
+  'Christian Religious Studies',
+  'Hausa Language'
+];
+
+export const CURRICULUM_PRESETS: Record<string, { name: string; subjects: string[] }> = {
+  science: {
+    name: 'Senior Science Stream',
+    subjects: [
+      'Mathematics',
+      'English Language',
+      'Civic Education',
+      'Biology',
+      'Chemistry',
+      'Physics',
+      'Computer Studies',
+      'Further Mathematics',
+      'Catering Craft Practice'
+    ]
+  },
+  commercial: {
+    name: 'Commercial & Business Studies',
+    subjects: [
+      'Mathematics',
+      'English Language',
+      'Civic Education',
+      'Economics',
+      'Commerce',
+      'Financial Accounting',
+      'Computer Studies',
+      'Data Processing',
+      'Agricultural Science'
+    ]
+  },
+  arts: {
+    name: 'Arts & Humanities',
+    subjects: [
+      'Mathematics',
+      'English Language',
+      'Civic Education',
+      'Literature in English',
+      'Government',
+      'Economics',
+      'Islamic Studies',
+      'Geography',
+      'Computer Studies'
+    ]
+  },
+  general: {
+    name: 'General Core Curriculum',
+    subjects: [
+      'Mathematics',
+      'English Language',
+      'Civic Education',
+      'Computer Studies',
+      'Economics',
+      'Biology'
+    ]
+  }
+};
+
+export const computeSubjectGrade = (termTotal: number): { grade: SubjectMark['grade']; remark: SubjectMark['remark'] } => {
+  if (termTotal >= 75) return { grade: 'A1', remark: 'EXCELLENT' };
+  if (termTotal >= 70) return { grade: 'B2', remark: 'VERY GOOD' };
+  if (termTotal >= 65) return { grade: 'B3', remark: 'GOOD' };
+  if (termTotal >= 60) return { grade: 'C4', remark: 'CREDIT' };
+  if (termTotal >= 55) return { grade: 'C5', remark: 'CREDIT' };
+  if (termTotal >= 50) return { grade: 'C6', remark: 'CREDIT' };
+  if (termTotal >= 45) return { grade: 'D7', remark: 'PASS' };
+  if (termTotal >= 40) return { grade: 'D8', remark: 'PASS' };
+  return { grade: 'F9', remark: 'FAIL' };
+};
+
+export const createDefaultSubjectMark = (
+  subject: string,
+  sNo: number = 1,
+  cat1: number = 8,
+  cat2: number = 9,
+  cat3: number = 8,
+  cat4: number = 8,
+  examMarks: number = 45
+): SubjectMark => {
+  const catTotal = Math.min(40, cat1 + cat2 + cat3 + cat4);
+  const exam = Math.min(60, examMarks);
+  const termTotal = catTotal + exam;
+  const { grade, remark } = computeSubjectGrade(termTotal);
+  return {
+    sNo,
+    subject,
+    cat1,
+    cat2,
+    cat3,
+    cat4,
+    catTotal,
+    examMarks: exam,
+    termTotal,
+    classAverage: 58,
+    formAverage: 52,
+    grade,
+    posInClass: 2,
+    posInForm: 2,
+    remark
+  };
+};
+
+// Generate authentic subject marks for any student matching their specific class & curriculum
 export const getStudentSubjectsData = (student: Student, baseSubjects: SubjectMark[] = FATIMA_SUBJECTS): SubjectMark[] => {
   if (student.studentNo === '2413') {
     return baseSubjects;
+  }
+
+  // If student is in a specific class other than Fatima's default, generate subjects matched to their class
+  if (student.formClass && (student.formClass.includes('JSS') || student.formClass.includes('SSS 2') || student.formClass.includes('SSS 3') || student.formClass.includes('SSS 1C') || student.formClass.includes('SSS 1D') || student.formClass.includes('SSS 1E') || student.studentNo.includes('NDASSS/'))) {
+    return generateSubjectMarksForStudent(student);
   }
 
   // Adjust scores slightly based on student position for realistic data
@@ -43,10 +174,10 @@ export const getStudentSubjectsData = (student: Student, baseSubjects: SubjectMa
   });
 };
 
-// Generates the inner HTML for one student's report sheet
+// Generates the inner HTML for one student's report sheet - Exactly mirroring PDF layout & typography
 export const generateReportSheetHtmlBody = (student: Student, subjects: SubjectMark[]): string => {
   const totalMarks = subjects.reduce((acc, curr) => acc + curr.termTotal, 0);
-  const averagePercentage = (totalMarks / subjects.length).toFixed(2);
+  const averagePercentage = (totalMarks / Math.max(1, subjects.length)).toFixed(2);
   const creditsAndAbove = subjects.filter(s => ['A1', 'B2', 'B3', 'C4', 'C5', 'C6'].includes(s.grade)).length;
   const passes = subjects.filter(s => ['D7', 'D8'].includes(s.grade)).length;
   const failures = subjects.filter(s => s.grade === 'F9').length;
@@ -64,234 +195,312 @@ export const generateReportSheetHtmlBody = (student: Student, subjects: SubjectM
   ];
 
   return `
-    <div style="font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif; font-size: 11px; color: #111; line-height: 1.35; padding: 12px; border: 2px solid #000; margin-bottom: 24px; background: #ffffff;">
-      <!-- HEADER -->
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
+    <div style="width: 100%; max-width: 780px; margin: 0 auto; border: 1.5pt solid #000000; padding: 8pt; background: #ffffff; box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; color: #000000;">
+      <!-- 1. HEADER SECTION (Crest, Academy Titles, Terminal Banner, Passport) -->
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; border-collapse: collapse; margin-bottom: 5pt;">
         <tr>
-          <td style="width: 80px; text-align: center; vertical-align: middle;">
-            <div style="width: 70px; height: 70px; border: 1.5pt solid #003366; background: #002244; color: #fff; font-size: 18px; font-weight: bold; line-height: 70px; text-align: center; border-radius: 4px;">
-              NDA
+          <!-- Academy Official Crest Logo (Left) -->
+          <td width="78" align="left" valign="middle" style="width: 78px; padding-right: 4pt;">
+            <div style="width: 72px; height: 74px; text-align: center; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
+              <img 
+                src="${NDA_LOGO_BASE64}" 
+                alt="NDA Crest Logo" 
+                width="72" 
+                height="72" 
+                style="width: 72px; height: 72px; max-width: 72px; max-height: 72px; object-fit: contain; display: block; margin: 0 auto; -webkit-print-color-adjust: exact; print-color-adjust: exact;" 
+              />
             </div>
           </td>
-          <td style="text-align: center; vertical-align: middle; padding: 0 10px;">
-            <h1 style="font-size: 19px; font-weight: 900; margin: 0; color: #000; text-transform: uppercase; letter-spacing: 0.5px;">
+
+          <!-- Center Titles -->
+          <td align="center" valign="middle" style="text-align: center; padding: 0 4pt;">
+            <div style="font-size: 14pt; font-weight: bold; color: #000000; text-transform: uppercase; letter-spacing: 0.5px; font-family: Arial, sans-serif; line-height: 1.15;">
               NIGERIAN DEFENCE ACADEMY
-            </h1>
-            <h2 style="font-size: 14px; font-weight: bold; margin: 2px 0; color: #111; text-transform: uppercase; letter-spacing: 1px;">
+            </div>
+            <div style="font-size: 10.5pt; font-weight: bold; color: #111111; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 1.5pt; font-family: Arial, sans-serif;">
               STAFF SECONDARY SCHOOL
-            </h2>
-            <p style="font-size: 10px; font-weight: bold; margin: 1px 0; color: #333; text-transform: uppercase;">
+            </div>
+            <div style="font-size: 7.5pt; color: #333333; margin-top: 1pt; font-family: Arial, sans-serif;">
               P.M.B. 2109, KADUNA &bull; NIGERIA
-            </p>
-            <div style="background: #000; color: #fff; font-size: 13px; font-weight: 900; padding: 2px 0; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px;">
-              TERMINAL REPORT
+            </div>
+            <table width="65%" align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 3pt auto 0 auto; border-collapse: collapse;">
+              <tr>
+                <td bgcolor="#000000" align="center" style="background-color: #000000; color: #ffffff; font-size: 9pt; font-weight: bold; text-align: center; padding: 2.5pt 0; letter-spacing: 1.5px; text-transform: uppercase; font-family: Arial, sans-serif;">
+                  TERMINAL REPORT
+                </td>
+              </tr>
+            </table>
+            <div style="font-size: 8.5pt; font-weight: bold; color: #000000; text-decoration: underline; margin-top: 3pt; letter-spacing: 0.5px; text-transform: uppercase; font-family: Arial, sans-serif;">
+              CONTINUOUS ASSESSMENT DOSSIER
             </div>
           </td>
-          <td style="width: 80px; text-align: center; vertical-align: middle;">
-            <div style="width: 70px; height: 85px; border: 1.5pt solid #555; background: #f8f9fa; font-size: 9px; font-weight: bold; text-align: center; padding-top: 30px; box-sizing: border-box; color: #444;">
-              AFFIX PASSPORT
-            </div>
+
+          <!-- Passport Box (Right) -->
+          <td width="74" align="right" valign="middle" style="width: 74px; padding-left: 4pt;">
+            <table cellpadding="0" cellspacing="0" border="0" style="width: 68px; height: 76px; border: 1pt solid #555555; background-color: #f8f9fa; text-align: center; border-collapse: collapse; margin-left: auto;">
+              <tr>
+                <td align="center" valign="middle" style="font-size: 6.5pt; font-weight: bold; color: #666666; font-family: Arial, sans-serif; line-height: 1.3; text-align: center; padding: 1px;">
+                  ${student.avatarUrl ? `<img src="${student.avatarUrl}" alt="${student.firstName}" style="width: 64px; height: 72px; object-fit: cover; display: block; margin: 0 auto; -webkit-print-color-adjust: exact; print-color-adjust: exact;" />` : `AFFIX<br>PASSPORT<br>PHOTO`}
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
       </table>
 
-      <div style="text-align: center; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 4px 0 8px 0; text-decoration: underline; letter-spacing: 0.5px;">
-        CONTINUOUS ASSESSMENT DOSSIER
-      </div>
-
-      <!-- BIO DATA GRID -->
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 10px; font-weight: bold; text-transform: uppercase;">
+      <!-- 2. BIO-DATA SECTION (Exact 6 Rows x 3 Columns) -->
+      <table width="100%" cellpadding="2" cellspacing="0" border="1" style="width: 100%; border-collapse: collapse; border: 0.75pt solid #000000; background-color: #fcfcfc; margin-bottom: 4.5pt; font-size: 7.5pt; font-family: Arial, sans-serif;">
         <tr>
-          <td style="padding: 2px 4px; width: 33%;">NAME: <span style="font-weight: 900; color: #000;">${student.lastName}, ${student.firstName}</span></td>
-          <td style="padding: 2px 4px; width: 33%;">ADM NO: <span style="font-weight: 900; color: #000;">${student.studentNo}</span></td>
-          <td style="padding: 2px 4px; width: 34%;">CLASS: <span style="font-weight: 900; color: #000;">${student.formClass}</span></td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt; width: 33%;">
+            <span style="font-weight: bold; color: #333333;">NAME:</span> <strong style="color: #000000; font-size: 8pt;">${student.lastName}, ${student.firstName}</strong>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt; width: 33%;">
+            <span style="font-weight: bold; color: #333333;">ADM NO:</span> <strong style="color: #000000; font-size: 8pt;">${student.studentNo}</strong>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt; width: 34%;">
+            <span style="font-weight: bold; color: #333333;">CLASS:</span> <strong style="color: #000000; font-size: 8pt;">${student.formClass}</strong>
+          </td>
         </tr>
         <tr>
-          <td style="padding: 2px 4px;">SPONSOR: <span style="font-weight: normal;">${student.sponsor || student.guardianName || 'Alhaji M. Abdullahi'}</span></td>
-          <td style="padding: 2px 4px;">HOUSE: <span style="font-weight: normal;">${student.house || 'Dalet'}</span></td>
-          <td style="padding: 2px 4px;">SESSION: <span style="font-weight: normal;">${student.session || '2020/21'}</span></td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">SPONSOR:</span> <span>${student.sponsor || student.guardianName || 'Alhaji M. Abdullahi'}</span>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">HOUSE:</span> <span>${student.house || 'Dalet'}</span>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">SESSION:</span> <span>${student.session || '2020/21'}</span>
+          </td>
         </tr>
         <tr>
-          <td style="padding: 2px 4px;">TERM: <span style="font-weight: normal;">${student.term || 'SECOND'}</span></td>
-          <td style="padding: 2px 4px;">AGE: <span style="font-weight: normal;">${student.age || 16}</span></td>
-          <td style="padding: 2px 4px;">CLASS AVERAGE AGE: <span style="font-weight: normal;">${student.classAverageAge || 15}</span></td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">TERM:</span> <span>${student.term || 'SECOND'}</span>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">AGE:</span> <span>${student.age || 16}</span>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">CLASS AVG AGE:</span> <span>${student.classAverageAge || 15}</span>
+          </td>
         </tr>
         <tr>
-          <td style="padding: 2px 4px;">TIMES SCHOOL OPENED: <span style="font-weight: normal;">${student.timesOpened || 94}</span></td>
-          <td style="padding: 2px 4px;">TIMES PRESENT: <span style="font-weight: normal;">${student.timesPresent || 94}</span></td>
-          <td style="padding: 2px 4px;">TIMES ABSENT: <span style="font-weight: normal;">${student.timesAbsent || 0}</span></td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">TIMES OPENED:</span> <span>${student.timesOpened || 94}</span>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">TIMES PRESENT:</span> <span>${student.timesPresent || 94}</span>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">TIMES ABSENT:</span> <span>${student.timesAbsent || 0}</span>
+          </td>
         </tr>
         <tr>
-          <td style="padding: 2px 4px;">NO IN CLASS: <span style="font-weight: normal;">${student.noInClass || 68}</span></td>
-          <td style="padding: 2px 4px;">POSITION IN CLASS: <span style="font-weight: 900; color: #000;">${student.positionInClass || 1}</span></td>
-          <td style="padding: 2px 4px;">NO IN FORM: <span style="font-weight: normal;">${student.noInForm || 170}</span></td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">NO IN CLASS:</span> <span>${student.noInClass || 68}</span>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">POSITION IN CLASS:</span> <strong style="color: #000000;">${student.positionInClass || 1}</strong>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">NO IN FORM:</span> <span>${student.noInForm || 170}</span>
+          </td>
         </tr>
         <tr>
-          <td style="padding: 2px 4px;">POSITION IN FORM: <span style="font-weight: 900; color: #000;">${student.positionInForm || 1}</span></td>
-          <td style="padding: 2px 4px;">CREDITS & ABOVE: <span style="font-weight: 900; color: #006600;">${creditsAndAbove}</span></td>
-          <td style="padding: 2px 4px;">PASSES: <span style="font-weight: normal;">${passes}</span> &bull; FAILURES: <span style="font-weight: normal;">${failures}</span></td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">POSITION IN FORM:</span> <strong style="color: #000000;">${student.positionInForm || 1}</strong>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">CREDITS &amp; ABOVE:</span> <strong style="color: #006600;">${creditsAndAbove}</strong>
+          </td>
+          <td style="border: 0.5pt solid #000000; padding: 2.5pt 4pt;">
+            <span style="font-weight: bold; color: #333333;">PASSES:</span> <span>${passes}</span> &bull; <span style="font-weight: bold; color: #333333;">FAILURES:</span> <span>${failures}</span>
+          </td>
         </tr>
       </table>
 
-      <!-- SUBJECT ASSESSMENT TABLE -->
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 9.5px;" border="1" cellpadding="2" cellspacing="0">
+      <!-- 3. CONTINUOUS ASSESSMENT SCORE TABLE (Exact PDF Columns & Sub-headers) -->
+      <table width="100%" cellpadding="2" cellspacing="0" border="1" style="width: 100%; border-collapse: collapse; border: 0.75pt solid #000000; margin-bottom: 4.5pt; font-size: 7pt; font-family: Arial, sans-serif;">
         <thead>
-          <tr style="background: #f0f0f0; font-weight: bold; text-align: center;">
-            <th rowspan="2" style="border: 1pt solid #000; width: 22px;">S/N</th>
-            <th rowspan="2" style="border: 1pt solid #000; text-align: left; padding-left: 4px;">CORE & ELECTIVE SUBJECTS</th>
-            <th style="border: 1pt solid #000; width: 32px;">1st CAT</th>
-            <th style="border: 1pt solid #000; width: 32px;">2nd CAT</th>
-            <th style="border: 1pt solid #000; width: 32px;">3rd CAT</th>
-            <th style="border: 1pt solid #000; width: 32px;">4th CAT</th>
-            <th style="border: 1pt solid #000; width: 36px;">CAT Total</th>
-            <th style="border: 1pt solid #000; width: 36px;">Exam Marks</th>
-            <th style="border: 1pt solid #000; width: 36px;">Term Total</th>
-            <th style="border: 1pt solid #000; width: 36px;">Class Avg</th>
-            <th style="border: 1pt solid #000; width: 36px;">Form Avg</th>
-            <th style="border: 1pt solid #000; width: 32px;">Grade</th>
-            <th style="border: 1pt solid #000; width: 32px;">Pos Class</th>
-            <th style="border: 1pt solid #000; width: 32px;">Pos Form</th>
-            <th style="border: 1pt solid #000; width: 68px;">REMARK</th>
+          <tr bgcolor="#ebeef2" style="background-color: #ebeef2; font-weight: bold; text-align: center;">
+            <th rowspan="2" style="border: 0.5pt solid #000000; width: 22px;">S/N</th>
+            <th rowspan="2" style="border: 0.5pt solid #000000; text-align: left; padding-left: 4px; width: 175px;">CORE &amp; ELECTIVE SUBJECTS</th>
+            <th style="border: 0.5pt solid #000000; width: 26px;">1st</th>
+            <th style="border: 0.5pt solid #000000; width: 26px;">2nd</th>
+            <th style="border: 0.5pt solid #000000; width: 26px;">3rd</th>
+            <th style="border: 0.5pt solid #000000; width: 26px;">4th</th>
+            <th style="border: 0.5pt solid #000000; width: 34px;">CAT</th>
+            <th style="border: 0.5pt solid #000000; width: 34px;">Exam</th>
+            <th style="border: 0.5pt solid #000000; width: 36px;">Term</th>
+            <th style="border: 0.5pt solid #000000; width: 30px;">Cls</th>
+            <th style="border: 0.5pt solid #000000; width: 30px;">Frm</th>
+            <th style="border: 0.5pt solid #000000; width: 28px;">Grd</th>
+            <th style="border: 0.5pt solid #000000; width: 26px;">Pos</th>
+            <th style="border: 0.5pt solid #000000; width: 26px;">Pos</th>
+            <th rowspan="2" style="border: 0.5pt solid #000000; width: 68px;">REMARK</th>
           </tr>
-          <tr style="background: #f7f7f7; font-weight: bold; text-align: center; font-size: 8.5px;">
-            <th style="border: 1pt solid #000;">10</th>
-            <th style="border: 1pt solid #000;">10</th>
-            <th style="border: 1pt solid #000;">10</th>
-            <th style="border: 1pt solid #000;">10</th>
-            <th style="border: 1pt solid #000;">40</th>
-            <th style="border: 1pt solid #000;">60</th>
-            <th style="border: 1pt solid #000;">100</th>
-            <th style="border: 1pt solid #000;">100</th>
-            <th style="border: 1pt solid #000;">100</th>
-            <th style="border: 1pt solid #000;"></th>
-            <th style="border: 1pt solid #000;"></th>
-            <th style="border: 1pt solid #000;"></th>
-            <th style="border: 1pt solid #000;"></th>
+          <tr bgcolor="#ebeef2" style="background-color: #ebeef2; font-size: 5.8pt; color: #505050; text-align: center;">
+            <th style="border: 0.5pt solid #000000;">(10)</th>
+            <th style="border: 0.5pt solid #000000;">(10)</th>
+            <th style="border: 0.5pt solid #000000;">(10)</th>
+            <th style="border: 0.5pt solid #000000;">(10)</th>
+            <th style="border: 0.5pt solid #000000;">(40)</th>
+            <th style="border: 0.5pt solid #000000;">(60)</th>
+            <th style="border: 0.5pt solid #000000;">(100)</th>
+            <th style="border: 0.5pt solid #000000;">Avg</th>
+            <th style="border: 0.5pt solid #000000;">Avg</th>
+            <th style="border: 0.5pt solid #000000;"></th>
+            <th style="border: 0.5pt solid #000000;">Cls</th>
+            <th style="border: 0.5pt solid #000000;">Frm</th>
           </tr>
         </thead>
         <tbody>
           ${subjects.map((s, idx) => `
-            <tr style="text-align: center; ${idx % 2 === 1 ? 'background: #fafafa;' : ''}">
-              <td style="border: 1pt solid #000; font-family: monospace;">${idx + 1}</td>
-              <td style="border: 1pt solid #000; text-align: left; padding-left: 4px; font-weight: bold; text-transform: uppercase;">${s.subject}</td>
-              <td style="border: 1pt solid #000; font-family: monospace;">${s.cat1}</td>
-              <td style="border: 1pt solid #000; font-family: monospace;">${s.cat2}</td>
-              <td style="border: 1pt solid #000; font-family: monospace;">${s.cat3}</td>
-              <td style="border: 1pt solid #000; font-family: monospace;">${s.cat4}</td>
-              <td style="border: 1pt solid #000; font-family: monospace; font-weight: bold;">${s.catTotal}</td>
-              <td style="border: 1pt solid #000; font-family: monospace; font-weight: bold;">${s.examMarks}</td>
-              <td style="border: 1pt solid #000; font-family: monospace; font-weight: 900; background: #f0f7ff;">${s.termTotal}</td>
-              <td style="border: 1pt solid #000; font-family: monospace;">${s.classAverage}</td>
-              <td style="border: 1pt solid #000; font-family: monospace;">${s.formAverage}</td>
-              <td style="border: 1pt solid #000; font-weight: 900; color: ${s.grade.startsWith('A') ? '#006600' : s.grade.startsWith('B') ? '#0044bb' : '#333'};">${s.grade}</td>
-              <td style="border: 1pt solid #000; font-family: monospace;">${s.posInClass}</td>
-              <td style="border: 1pt solid #000; font-family: monospace;">${s.posInForm}</td>
-              <td style="border: 1pt solid #000; font-weight: bold; font-size: 8.5px; text-transform: uppercase;">${s.remark}</td>
+            <tr bgcolor="${idx % 2 === 1 ? '#f9fafc' : '#ffffff'}" style="background-color: ${idx % 2 === 1 ? '#f9fafc' : '#ffffff'}; text-align: center;">
+              <td style="border: 0.5pt solid #000000; font-family: monospace; color: #444444;">${idx + 1}</td>
+              <td style="border: 0.5pt solid #000000; text-align: left; padding-left: 4px; font-weight: bold; text-transform: uppercase; color: #000000;">${s.subject}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace;">${s.cat1}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace;">${s.cat2}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace;">${s.cat3}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace;">${s.cat4}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace; font-weight: bold;">${s.catTotal}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace; font-weight: bold;">${s.examMarks}</td>
+              <td bgcolor="#eef5ff" style="border: 0.5pt solid #000000; font-family: monospace; font-weight: bold; background-color: #eef5ff; color: #002266;">${s.termTotal}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace; color: #444444;">${s.classAverage}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace; color: #444444;">${s.formAverage}</td>
+              <td style="border: 0.5pt solid #000000; font-weight: bold; color: ${s.grade.startsWith('A') ? '#007800' : s.grade.startsWith('B') ? '#0046b4' : '#000000'};">${s.grade}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace;">${s.posInClass}</td>
+              <td style="border: 0.5pt solid #000000; font-family: monospace;">${s.posInForm}</td>
+              <td style="border: 0.5pt solid #000000; font-weight: bold; font-size: 6.2pt; text-transform: uppercase;">${s.remark}</td>
             </tr>
           `).join('')}
         </tbody>
         <tfoot>
-          <tr style="background: #f0f0f0; font-weight: bold; font-size: 9.5px;">
-            <td colspan="2" style="border: 1pt solid #000; padding: 3px 4px;">
-              Total Marks: <strong style="font-size: 11px;">${totalMarks}</strong>
+          <tr bgcolor="#ebeef2" style="background-color: #ebeef2; font-weight: bold; font-size: 7.2pt;">
+            <td colspan="2" style="border: 0.5pt solid #000000; padding: 2.5pt 4pt; text-align: left;">
+              Total Marks: <strong style="font-size: 8pt; color: #000000;">${totalMarks}</strong>
             </td>
-            <td colspan="4" style="border: 1pt solid #000; padding: 3px 4px; text-align: center;">
-              Scores Average: <strong style="font-size: 11px;">${averagePercentage}%</strong>
+            <td colspan="4" style="border: 0.5pt solid #000000; padding: 2.5pt 2pt; text-align: center;">
+              Scores Average: <strong style="font-size: 8pt; color: #000000;">${averagePercentage}%</strong>
             </td>
-            <td colspan="4" style="border: 1pt solid #000; padding: 3px 4px; text-align: center;">
-              Class Highest Avg: <strong>85.00%</strong>
+            <td colspan="4" style="border: 0.5pt solid #000000; padding: 2.5pt 2pt; text-align: center;">
+              Class Highest Avg: <strong style="color: #000000;">85.00%</strong>
             </td>
-            <td colspan="5" style="border: 1pt solid #000; padding: 3px 4px; text-align: center;">
-              Form Highest Avg: <strong>85.00%</strong>
+            <td colspan="5" style="border: 0.5pt solid #000000; padding: 2.5pt 2pt; text-align: center;">
+              Form Highest Avg: <strong style="color: #000000;">85.00%</strong>
             </td>
           </tr>
         </tfoot>
       </table>
 
-      <!-- CHARACTER DEVELOPMENT & BEHAVIOURAL ASSESSMENT -->
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;" border="0">
+      <!-- 4. CHARACTER DEVELOPMENT / PSYCHOMOTOR & BEHAVIOURAL RATING (Exact PDF Side-by-Side) -->
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin-bottom: 4.5pt; border-collapse: collapse;">
         <tr>
-          <td style="width: 68%; vertical-align: top; padding-right: 6px;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 9px;" border="1" cellpadding="2" cellspacing="0">
+          <!-- Psychomotor Domain Table (Left, 66% width) -->
+          <td width="66%" valign="top" style="width: 66%; padding-right: 4pt;">
+            <table width="100%" cellpadding="1.5" cellspacing="0" border="1" style="width: 100%; border-collapse: collapse; border: 0.75pt solid #000000; font-size: 6.8pt; font-family: Arial, sans-serif;">
               <thead>
-                <tr style="background: #f0f0f0; font-weight: bold; text-align: center;">
-                  <th style="border: 1pt solid #000; text-align: left; padding-left: 4px;">CHARACTER DEVELOPMENT / PSYCHOMOTOR DOMAIN</th>
-                  <th style="border: 1pt solid #000; width: 24px;">A</th>
-                  <th style="border: 1pt solid #000; width: 24px;">B</th>
-                  <th style="border: 1pt solid #000; width: 24px;">C</th>
-                  <th style="border: 1pt solid #000; width: 24px;">D</th>
+                <tr bgcolor="#ebeef2" style="background-color: #ebeef2; font-weight: bold; text-align: center;">
+                  <th style="border: 0.5pt solid #000000; text-align: left; padding: 2pt 4pt;">CHARACTER DEVELOPMENT / PSYCHOMOTOR DOMAIN</th>
+                  <th style="border: 0.5pt solid #000000; width: 22px;">A</th>
+                  <th style="border: 0.5pt solid #000000; width: 22px;">B</th>
+                  <th style="border: 0.5pt solid #000000; width: 22px;">C</th>
+                  <th style="border: 0.5pt solid #000000; width: 22px;">D</th>
                 </tr>
               </thead>
               <tbody>
                 ${characterTraits.map(item => `
                   <tr>
-                    <td style="border: 1pt solid #000; padding: 1.5px 4px; font-weight: 600;">${item.trait}</td>
-                    <td style="border: 1pt solid #000; text-align: center; font-weight: bold;">${item.grade === 'A' ? 'X' : ''}</td>
-                    <td style="border: 1pt solid #000; text-align: center; font-weight: bold;">${item.grade === 'B' ? 'X' : ''}</td>
-                    <td style="border: 1pt solid #000; text-align: center; font-weight: bold;">${item.grade === 'C' ? 'X' : ''}</td>
-                    <td style="border: 1pt solid #000; text-align: center; font-weight: bold;">${item.grade === 'D' ? 'X' : ''}</td>
+                    <td style="border: 0.5pt solid #000000; padding: 1.5pt 4pt; font-weight: normal; color: #000000;">${item.trait}</td>
+                    <td style="border: 0.5pt solid #000000; text-align: center; font-weight: bold; color: #000000;">${item.grade === 'A' ? 'X' : ''}</td>
+                    <td style="border: 0.5pt solid #000000; text-align: center; font-weight: bold; color: #000000;">${item.grade === 'B' ? 'X' : ''}</td>
+                    <td style="border: 0.5pt solid #000000; text-align: center; font-weight: bold; color: #000000;">${item.grade === 'C' ? 'X' : ''}</td>
+                    <td style="border: 0.5pt solid #000000; text-align: center; font-weight: bold; color: #000000;">${item.grade === 'D' ? 'X' : ''}</td>
                   </tr>
                 `).join('')}
               </tbody>
             </table>
           </td>
-          <td style="width: 32%; vertical-align: top; padding-left: 6px;">
-            <div style="border: 1pt solid #000; padding: 6px; font-size: 9px; background: #fafafa; height: 100%; box-sizing: border-box;">
-              <strong style="display: block; font-size: 9.5px; border-bottom: 1pt solid #000; padding-bottom: 2px; margin-bottom: 4px; text-transform: uppercase;">
-                KEY TO BEHAVIOURAL RATING
-              </strong>
-              <div style="margin: 2px 0;"><strong>A</strong> - Excellent</div>
-              <div style="margin: 2px 0;"><strong>B</strong> - Good</div>
-              <div style="margin: 2px 0;"><strong>C</strong> - Fair</div>
-              <div style="margin: 2px 0;"><strong>D</strong> - Poor</div>
-              <div style="margin-top: 8px; padding-top: 4px; border-top: 1pt dashed #888;">
-                <strong>Fee Account Status:</strong> Nil (Fully Settled)
-              </div>
-            </div>
+
+          <!-- Key to Behavioural Rating Box (Right, 34% width) -->
+          <td width="34%" valign="top" style="width: 34%;">
+            <table width="100%" cellpadding="3" cellspacing="0" border="1" style="width: 100%; border-collapse: collapse; border: 0.75pt solid #000000; background-color: #fcfcfc; font-size: 6.8pt; font-family: Arial, sans-serif;">
+              <tr>
+                <td style="padding: 4pt 6pt;">
+                  <div style="text-align: center; font-weight: bold; font-size: 7.2pt; border-bottom: 0.5pt solid #b4b4b4; padding-bottom: 2pt; margin-bottom: 3pt; text-transform: uppercase;">
+                    KEY TO BEHAVIOURAL RATING
+                  </div>
+                  <div style="margin: 2pt 0; font-size: 6.8pt;">A - Excellent</div>
+                  <div style="margin: 2pt 0; font-size: 6.8pt;">B - Good</div>
+                  <div style="margin: 2pt 0; font-size: 6.8pt;">C - Fair</div>
+                  <div style="margin: 2pt 0; font-size: 6.8pt;">D - Poor</div>
+                  <div style="margin-top: 5pt; padding-top: 3pt; border-top: 0.5pt dashed #888888; font-size: 6.8pt;">
+                    <strong style="color: #000000;">Fee Account Status:</strong><br>
+                    <span style="color: #007800; font-weight: bold;">Nil (Fully Settled)</span>
+                  </div>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
       </table>
 
-      <!-- REMARKS & SIGNATURES -->
-      <table style="width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 10.5px; font-weight: bold;" border="0">
+      <!-- 5. REMARKS & SIGNATURES SECTION (Exact PDF borders & layout) -->
+      <table width="100%" cellpadding="3" cellspacing="0" border="1" style="width: 100%; border-collapse: collapse; border: 0.75pt solid #000000; margin-bottom: 4.5pt; font-size: 7.2pt; font-family: Arial, sans-serif;">
         <tr>
-          <td style="padding: 3px 0; width: 70%;">
-            FORM MASTER'S REMARK: <span style="font-weight: normal; font-style: italic;">A dedicated, hardworking, and exceptionally intelligent student.</span>
+          <td width="72%" style="border: 0.5pt solid #000000; padding: 3pt 4pt;">
+            <strong style="color: #000000;">FORM MASTER'S REMARK:</strong> <span style="font-style: italic; color: #111111;">A dedicated, hardworking, and exceptionally intelligent student.</span>
           </td>
-          <td style="padding: 3px 0; width: 30%; text-align: right;">
-            SIGNATURE: <span style="font-family: 'Brush Script MT', cursive; font-size: 14px; font-weight: normal;">H. Danjuma</span>
+          <td width="28%" style="border: 0.5pt solid #000000; padding: 3pt 4pt; text-align: right;">
+            <strong style="color: #000000;">SIGNATURE:</strong> <span style="font-family: 'Brush Script MT', 'Lucida Calligraphy', cursive; font-size: 10.5pt; font-weight: normal; margin-left: 4px; color: #000000;">H. Danjuma</span>
           </td>
         </tr>
         <tr>
-          <td style="padding: 3px 0;">
-            PRINCIPAL'S REMARK: <span style="font-weight: normal; font-style: italic;">Outstanding performance and character. Recommended for promotion.</span>
+          <td style="border: 0.5pt solid #000000; padding: 3pt 4pt;">
+            <strong style="color: #000000;">PRINCIPAL'S REMARK:</strong> <span style="font-style: italic; color: #111111;">Outstanding performance and character. Recommended for promotion.</span>
           </td>
-          <td style="padding: 3px 0; text-align: right;">
-            SIGNATURE: <span style="font-family: 'Brush Script MT', cursive; font-size: 14px; font-weight: normal;">Col. M. A. Principal</span>
+          <td style="border: 0.5pt solid #000000; padding: 3pt 4pt; text-align: right;">
+            <strong style="color: #000000;">SIGNATURE:</strong> <span style="font-family: 'Brush Script MT', 'Lucida Calligraphy', cursive; font-size: 10.5pt; font-weight: normal; margin-left: 4px; color: #000000;">Col. M. A. Principal</span>
           </td>
         </tr>
         <tr>
-          <td style="padding: 6px 0 2px 0; border-top: 1pt solid #000; font-size: 10px;">
-            NEXT TERM BEGINS ON: <strong style="text-decoration: underline;">Monday 26 July, 2021</strong>
+          <td style="border: 0.5pt solid #000000; padding: 3pt 4pt;">
+            <strong style="color: #000000;">NEXT TERM BEGINS ON:</strong> <strong style="text-decoration: underline; margin-left: 4px; color: #000000;">Monday 26 July, 2021</strong>
           </td>
-          <td style="padding: 6px 0 2px 0; border-top: 1pt solid #000; text-align: right; color: #004400; font-size: 9.5px;">
-            [OFFICIALLY SEALED & VERIFIED]
+          <td style="border: 0.5pt solid #000000; padding: 3pt 4pt; text-align: right; color: #006600; font-weight: bold; font-size: 7.5pt;">
+            [OFFICIALLY SEALED &amp; VERIFIED]
           </td>
         </tr>
       </table>
 
-      <!-- KEYS TO GRADES -->
-      <div style="margin-top: 6px; padding-top: 4px; border-top: 1pt solid #000; font-size: 8.5px;">
-        <strong style="text-transform: uppercase; margin-right: 4px;">KEYS TO GRADES:</strong>
-        <span style="margin-right: 8px;">75-100: A1 EXCELLENT</span>
-        <span style="margin-right: 8px;">70-74: B2 VERY GOOD</span>
-        <span style="margin-right: 8px;">65-69: B3 GOOD</span>
-        <span style="margin-right: 8px;">60-64: C4 CREDIT</span>
-        <span style="margin-right: 8px;">55-59: C5 CREDIT</span>
-        <span style="margin-right: 8px;">50-54: C6 CREDIT</span>
-        <span style="margin-right: 8px;">45-49: D7 PASS</span>
-        <span style="margin-right: 8px;">40-44: D8 PASS</span>
-        <span>0-39: F9 FAIL</span>
+      <!-- 6. KEYS TO GRADES (Exact PDF wording & alignment) -->
+      <table width="100%" cellpadding="2.5" cellspacing="0" border="1" style="width: 100%; border-collapse: collapse; border: 0.75pt solid #000000; background-color: #fcfcfc; margin-bottom: 4pt; font-size: 6.2pt; font-family: Arial, sans-serif;">
+        <tr>
+          <td style="padding: 2.5pt 4pt;">
+            <strong style="text-transform: uppercase; margin-right: 4pt; font-size: 6.8pt; color: #000000;">KEYS TO GRADES:</strong>
+            <span style="margin-right: 6pt;">75-100: A1 EXCELLENT</span>
+            <span style="margin-right: 6pt;">|</span>
+            <span style="margin-right: 6pt;">70-74: B2 VERY GOOD</span>
+            <span style="margin-right: 6pt;">|</span>
+            <span style="margin-right: 6pt;">65-69: B3 GOOD</span>
+            <span style="margin-right: 6pt;">|</span>
+            <span style="margin-right: 6pt;">60-64: C4 CREDIT</span>
+            <span style="margin-right: 6pt;">|</span>
+            <span style="margin-right: 6pt;">55-59: C5 CREDIT</span>
+            <br>
+            <span style="margin-left: 68pt; margin-right: 6pt;">50-54: C6 CREDIT</span>
+            <span style="margin-right: 6pt;">|</span>
+            <span style="margin-right: 6pt;">45-49: D7 PASS</span>
+            <span style="margin-right: 6pt;">|</span>
+            <span style="margin-right: 6pt;">40-44: D8 PASS</span>
+            <span style="margin-right: 6pt;">|</span>
+            <span>0-39: F9 FAIL</span>
+          </td>
+        </tr>
+      </table>
+
+      <!-- 7. SECURITY WATERMARK / FOOTER (Exact PDF Footer Line) -->
+      <div style="text-align: center; font-size: 5.5pt; font-style: italic; color: #666666; font-family: Arial, sans-serif; margin-top: 3pt;">
+        Official NDA Staff Secondary School Terminal Assessment Dossier &bull; Candidate Adm No: ${student.studentNo} &bull; Verified: ${new Date().toLocaleDateString('en-GB')}
       </div>
     </div>
   `;
@@ -312,36 +521,52 @@ export const createWordDocContent = (htmlBodies: string[], documentTitle: string
           <w:View>Print</w:View>
           <w:Zoom>100</w:Zoom>
           <w:DoNotOptimizeForBrowser/>
+          <w:Compatibility>
+            <w:BreakWrappedTables/>
+            <w:SnapToGridInCell/>
+            <w:WrapTextWithPunct/>
+            <w:UseAsianBreakRules/>
+          </w:Compatibility>
         </w:WordDocument>
       </xml>
       <![endif]-->
       <style>
         @page Section1 {
-          size: 8.5in 11.0in;
-          margin: 0.35in 0.4in 0.35in 0.4in;
-          mso-header-margin: 0.2in;
-          mso-footer-margin: 0.2in;
+          size: 210mm 297mm; /* Exact A4 portrait matching jsPDF */
+          margin: 6mm 7mm 6mm 7mm;
+          mso-header-margin: 0mm;
+          mso-footer-margin: 0mm;
+          mso-paper-source: 0;
         }
         div.Section1 { 
-          page: Section1; 
-        }
-        .page-break { 
-          page-break-before: always; 
-          mso-break-type: section-break; 
+          page: Section1;
+          mso-page-orientation: portrait;
         }
         body {
           font-family: Arial, Helvetica, sans-serif;
-          font-size: 11px;
+          font-size: 7.5pt;
           color: #000000;
           background: #ffffff;
+          margin: 0;
+          padding: 0;
         }
         table {
           border-collapse: collapse;
           mso-table-lspace: 0pt;
           mso-table-rspace: 0pt;
+          mso-padding-alt: 1.5pt 2.5pt 1.5pt 2.5pt;
         }
         td, th {
           border-color: #000000;
+          mso-border-alt: solid windowtext .5pt;
+        }
+        tr {
+          page-break-inside: avoid;
+          mso-break-type: none;
+        }
+        .page-break { 
+          page-break-before: always; 
+          mso-break-type: section-break; 
         }
       </style>
     </head>
@@ -397,16 +622,21 @@ export const renderStudentPdfPage = (
   doc.rect(7, 6, 196, 285);
 
   // 1. HEADER SECTION (y: 8 to 36)
-  // Crest / NDA Logo Badge Box
-  doc.setFillColor(0, 34, 68);
-  doc.setDrawColor(0, 34, 68);
-  doc.roundedRect(11, 9, 20, 22, 1, 1, 'FD');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('NDA', 21, 20, { align: 'center' });
-  doc.setFontSize(6.5);
-  doc.text('SSS', 21, 26, { align: 'center' });
+  // Crest / Official NDA Secondary School Logo
+  try {
+    doc.addImage(NDA_LOGO_BASE64, 'PNG', 11, 8, 20, 22, undefined, 'FAST');
+  } catch {
+    doc.setDrawColor(0, 34, 68);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(11, 8.5, 20, 21, 1, 1, 'FD');
+    doc.setTextColor(0, 34, 68);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('NDA SSS', 21, 19, { align: 'center' });
+    doc.setFontSize(5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('KADUNA', 21, 24, { align: 'center' });
+  }
 
   // Center Titles
   doc.setTextColor(0, 0, 0);
@@ -883,13 +1113,14 @@ export const downloadStudentPdf = (student: Student, subjects?: SubjectMark[]) =
 export const downloadSelectedCombinedPdf = (
   selectedStudents: Student[],
   className: string = 'SSS 1B',
-  term: string = 'Second Term'
+  term: string = 'Second Term',
+  getSubjects?: (student: Student) => SubjectMark[]
 ) => {
   if (!selectedStudents.length) return;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   selectedStudents.forEach((student, index) => {
-    const marks = getStudentSubjectsData(student);
+    const marks = getSubjects ? getSubjects(student) : getStudentSubjectsData(student);
     renderStudentPdfPage(doc, student, marks, index === 0);
   });
 
@@ -901,13 +1132,14 @@ export const downloadSelectedCombinedPdf = (
 export const downloadBulkCombinedPdf = (
   students: Student[],
   className: string = 'SSS 1B',
-  term: string = 'Second Term'
+  term: string = 'Second Term',
+  getSubjects?: (student: Student) => SubjectMark[]
 ) => {
   if (!students.length) return;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   students.forEach((student, index) => {
-    const marks = getStudentSubjectsData(student);
+    const marks = getSubjects ? getSubjects(student) : getStudentSubjectsData(student);
     renderStudentPdfPage(doc, student, marks, index === 0);
   });
 
@@ -924,7 +1156,8 @@ export const downloadSelectedPdfZipArchive = async (
   selectedStudents: Student[],
   className: string = 'SSS 1B',
   term: string = 'Second Term',
-  options: { includeCsv?: boolean; includeManifest?: boolean } = { includeCsv: true, includeManifest: true }
+  options: { includeCsv?: boolean; includeManifest?: boolean } = { includeCsv: true, includeManifest: true },
+  getSubjects?: (student: Student) => SubjectMark[]
 ) => {
   if (!selectedStudents.length) return;
   const zip = new JSZip();
@@ -933,7 +1166,7 @@ export const downloadSelectedPdfZipArchive = async (
 
   // Add individual student PDF files
   for (const st of selectedStudents) {
-    const marks = getStudentSubjectsData(st);
+    const marks = getSubjects ? getSubjects(st) : getStudentSubjectsData(st);
     const pdfDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     renderStudentPdfPage(pdfDoc, st, marks, true);
     const pdfArrayBuffer = pdfDoc.output('arraybuffer');
@@ -945,9 +1178,9 @@ export const downloadSelectedPdfZipArchive = async (
   if (options.includeCsv !== false) {
     const headers = ['Adm No', 'Student Name', 'Class', 'Total Marks', 'Average %', 'Position in Class', 'Status'];
     const csvRows = selectedStudents.map((st) => {
-      const marks = getStudentSubjectsData(st);
+      const marks = getSubjects ? getSubjects(st) : getStudentSubjectsData(st);
       const total = marks.reduce((acc, curr) => acc + curr.termTotal, 0);
-      const avg = (total / marks.length).toFixed(2);
+      const avg = (total / Math.max(1, marks.length)).toFixed(2);
       return [st.studentNo, `"${st.lastName}, ${st.firstName}"`, st.formClass, total, `${avg}%`, st.positionInClass || 1, 'PASSED'];
     });
     const csvContent = [headers.join(','), ...csvRows.map((r) => r.join(','))].join('\n');
@@ -987,9 +1220,10 @@ Contains:
 export const downloadBulkPdfZipArchive = async (
   students: Student[],
   className: string = 'SSS 1B',
-  term: string = 'Second Term'
+  term: string = 'Second Term',
+  getSubjects?: (student: Student) => SubjectMark[]
 ) => {
-  return downloadSelectedPdfZipArchive(students, className, term, { includeCsv: true, includeManifest: true });
+  return downloadSelectedPdfZipArchive(students, className, term, { includeCsv: true, includeManifest: true }, getSubjects);
 };
 
 // ============================================================================
@@ -1013,11 +1247,12 @@ export const downloadStudentWordDoc = (student: Student, subjects?: SubjectMark[
 export const downloadSelectedCombinedWordDoc = (
   selectedStudents: Student[],
   className: string = 'SSS 1B',
-  term: string = 'Second Term'
+  term: string = 'Second Term',
+  getSubjects?: (student: Student) => SubjectMark[]
 ) => {
   if (!selectedStudents.length) return;
   const bodies = selectedStudents.map((st) => {
-    const marks = getStudentSubjectsData(st);
+    const marks = getSubjects ? getSubjects(st) : getStudentSubjectsData(st);
     return generateReportSheetHtmlBody(st, marks);
   });
 
@@ -1034,9 +1269,10 @@ export const downloadSelectedCombinedWordDoc = (
 export const downloadBulkCombinedWordDoc = (
   students: Student[],
   className: string = 'SSS 1B',
-  term: string = 'Second Term'
+  term: string = 'Second Term',
+  getSubjects?: (student: Student) => SubjectMark[]
 ) => {
-  return downloadSelectedCombinedWordDoc(students, className, term);
+  return downloadSelectedCombinedWordDoc(students, className, term, getSubjects);
 };
 
 // Download SELECTED students as individual Word documents inside a single ZIP archive
@@ -1044,7 +1280,8 @@ export const downloadSelectedZipArchive = async (
   selectedStudents: Student[],
   className: string = 'SSS 1B',
   term: string = 'Second Term',
-  options: { includeCsv?: boolean; includeManifest?: boolean } = { includeCsv: true, includeManifest: true }
+  options: { includeCsv?: boolean; includeManifest?: boolean } = { includeCsv: true, includeManifest: true },
+  getSubjects?: (student: Student) => SubjectMark[]
 ) => {
   if (!selectedStudents.length) return;
   const zip = new JSZip();
@@ -1053,7 +1290,7 @@ export const downloadSelectedZipArchive = async (
 
   // Add individual student doc files
   selectedStudents.forEach((st) => {
-    const marks = getStudentSubjectsData(st);
+    const marks = getSubjects ? getSubjects(st) : getStudentSubjectsData(st);
     const body = generateReportSheetHtmlBody(st, marks);
     const fileName = `Report_Sheet_${st.studentNo}_${st.lastName}_${st.firstName}.doc`;
     const docContent = createWordDocContent([body], `Terminal Report - ${st.firstName} ${st.lastName}`);
@@ -1064,9 +1301,9 @@ export const downloadSelectedZipArchive = async (
   if (options.includeCsv !== false) {
     const headers = ['Adm No', 'Student Name', 'Class', 'Total Marks', 'Average %', 'Position in Class', 'Status'];
     const csvRows = selectedStudents.map((st) => {
-      const marks = getStudentSubjectsData(st);
+      const marks = getSubjects ? getSubjects(st) : getStudentSubjectsData(st);
       const total = marks.reduce((acc, curr) => acc + curr.termTotal, 0);
-      const avg = (total / marks.length).toFixed(2);
+      const avg = (total / Math.max(1, marks.length)).toFixed(2);
       return [st.studentNo, `"${st.lastName}, ${st.firstName}"`, st.formClass, total, `${avg}%`, st.positionInClass || 1, 'PASSED'];
     });
     const csvContent = [headers.join(','), ...csvRows.map((r) => r.join(','))].join('\n');
@@ -1102,115 +1339,610 @@ Compatible with: Microsoft Word (Desktop, 365, Mobile), Google Docs, LibreOffice
 export const downloadBulkZipArchive = async (
   students: Student[],
   className: string = 'SSS 1B',
-  term: string = 'Second Term'
+  term: string = 'Second Term',
+  getSubjects?: (student: Student) => SubjectMark[]
 ) => {
-  return downloadSelectedZipArchive(students, className, term, { includeCsv: true, includeManifest: true });
+  return downloadSelectedZipArchive(students, className, term, { includeCsv: true, includeManifest: true }, getSubjects);
 };
 
 // ============================================================================
 // PRINT FUNCTIONALITY (High-Quality Print Preview with Page Breaks)
 // ============================================================================
 
+// Helper function to print report sheet HTML reliably using a hidden iframe
+const printReportHtmlViaIframe = (htmlBody: string, title: string = 'Terminal Report') => {
+  const printIframe = document.createElement('iframe');
+  printIframe.style.position = 'fixed';
+  printIframe.style.right = '0';
+  printIframe.style.bottom = '0';
+  printIframe.style.width = '0';
+  printIframe.style.height = '0';
+  printIframe.style.border = '0';
+  document.body.appendChild(printIframe);
+
+  const doc = printIframe.contentDocument || printIframe.contentWindow?.document;
+  if (!doc) return;
+
+  doc.open();
+  doc.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>${title}</title>
+      <meta charset="utf-8" />
+      <base href="${window.location.origin}/" />
+      <style>
+        @page {
+          size: A4 portrait;
+          margin: 6mm 6mm 6mm 6mm;
+        }
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        body {
+          margin: 0;
+          padding: 6px;
+          background: #fff;
+          color: #000;
+          font-family: Arial, Helvetica, sans-serif;
+        }
+        img {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          display: block;
+        }
+        @media print {
+          body { padding: 0; }
+        }
+      </style>
+    </head>
+    <body>
+      ${htmlBody}
+    </body>
+    </html>
+  `);
+  doc.close();
+
+  const win = printIframe.contentWindow;
+  if (!win) return;
+
+  const trigger = () => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      // Ignored
+    } finally {
+      setTimeout(() => {
+        if (printIframe.parentNode) {
+          document.body.removeChild(printIframe);
+        }
+      }, 2000);
+    }
+  };
+
+  const images = Array.from(doc.images);
+  const unloaded = images.filter((img) => !img.complete);
+  if (unloaded.length === 0) {
+    setTimeout(trigger, 120);
+  } else {
+    let count = 0;
+    unloaded.forEach((img) => {
+      img.onload = img.onerror = () => {
+        count++;
+        if (count === unloaded.length) setTimeout(trigger, 120);
+      };
+    });
+    setTimeout(trigger, 700);
+  }
+};
+
 // Print single student report sheet cleanly
 export const printSingleReportSheet = (student: Student, subjects?: SubjectMark[]) => {
   const markList = subjects || getStudentSubjectsData(student);
   const htmlBody = generateReportSheetHtmlBody(student, markList);
 
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Terminal Report - ${student.firstName} ${student.lastName}</title>
-        <meta charset="utf-8" />
-        <style>
-          @page {
-            size: A4 portrait;
-            margin: 8mm 8mm 8mm 8mm;
-          }
-          body {
-            margin: 0;
-            padding: 10px;
-            background: #fff;
-            color: #000;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-          @media print {
-            body { padding: 0; }
-          }
-        </style>
-      </head>
-      <body>
-        ${htmlBody}
-        <script>
-          window.onload = function() {
-            window.focus();
-            window.print();
-            setTimeout(function() { window.close(); }, 1500);
-          };
-        </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-  } else {
-    window.print();
+  try {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Terminal Report - ${student.firstName} ${student.lastName}</title>
+          <meta charset="utf-8" />
+          <base href="${window.location.origin}/" />
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 6mm 6mm 6mm 6mm;
+            }
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              margin: 0;
+              padding: 8px;
+              background: #fff;
+              color: #000;
+              font-family: Arial, Helvetica, sans-serif;
+            }
+            img {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              display: block;
+            }
+            @media print {
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          ${htmlBody}
+          <script>
+            function triggerPrint() {
+              const images = Array.from(document.images);
+              const unloaded = images.filter(img => !img.complete);
+              const doPrint = function() {
+                window.focus();
+                window.print();
+                setTimeout(function() { window.close(); }, 1500);
+              };
+              if (unloaded.length === 0) {
+                setTimeout(doPrint, 100);
+              } else {
+                let loaded = 0;
+                unloaded.forEach(function(img) {
+                  img.onload = img.onerror = function() {
+                    loaded++;
+                    if (loaded === unloaded.length) setTimeout(doPrint, 100);
+                  };
+                });
+                setTimeout(doPrint, 800);
+              }
+            }
+            if (document.readyState === 'complete') {
+              triggerPrint();
+            } else {
+              window.onload = triggerPrint;
+            }
+          </script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } else {
+      printReportHtmlViaIframe(htmlBody, `Terminal Report - ${student.firstName} ${student.lastName}`);
+    }
+  } catch {
+    printReportHtmlViaIframe(htmlBody, `Terminal Report - ${student.firstName} ${student.lastName}`);
   }
 };
 
 // Print selected student report sheets in one continuous batch with clean page breaks
-export const printSelectedReportSheets = (selectedStudents: Student[]) => {
+export const printSelectedReportSheets = (
+  selectedStudents: Student[],
+  getSubjects?: (student: Student) => SubjectMark[]
+) => {
   if (!selectedStudents.length) return;
-  const printWindow = window.open('', '_blank');
   const studentHtmls = selectedStudents.map(st => {
-    const marks = getStudentSubjectsData(st);
+    const marks = getSubjects ? getSubjects(st) : getStudentSubjectsData(st);
     return `<div style="page-break-after: always; break-after: page;">${generateReportSheetHtmlBody(st, marks)}</div>`;
   }).join('');
 
-  if (printWindow) {
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Selected Terminal Reports (${selectedStudents.length} Candidates)</title>
-        <meta charset="utf-8" />
-        <style>
-          @page {
-            size: A4 portrait;
-            margin: 8mm 8mm 8mm 8mm;
-          }
-          body {
-            margin: 0;
-            padding: 10px;
-            background: #fff;
-            color: #000;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-          @media print {
-            body { padding: 0; }
-          }
-        </style>
-      </head>
-      <body>
-        ${studentHtmls}
-        <script>
-          window.onload = function() {
-            window.focus();
-            window.print();
-            setTimeout(function() { window.close(); }, 2000);
-          };
-        </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-  } else {
-    window.print();
+  try {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Selected Terminal Reports (${selectedStudents.length} Candidates)</title>
+          <meta charset="utf-8" />
+          <base href="${window.location.origin}/" />
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 6mm 6mm 6mm 6mm;
+            }
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              margin: 0;
+              padding: 8px;
+              background: #fff;
+              color: #000;
+              font-family: Arial, Helvetica, sans-serif;
+            }
+            img {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              display: block;
+            }
+            @media print {
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          ${studentHtmls}
+          <script>
+            function triggerPrint() {
+              const images = Array.from(document.images);
+              const unloaded = images.filter(img => !img.complete);
+              const doPrint = function() {
+                window.focus();
+                window.print();
+                setTimeout(function() { window.close(); }, 2000);
+              };
+              if (unloaded.length === 0) {
+                setTimeout(doPrint, 150);
+              } else {
+                let loaded = 0;
+                unloaded.forEach(function(img) {
+                  img.onload = img.onerror = function() {
+                    loaded++;
+                    if (loaded === unloaded.length) setTimeout(doPrint, 150);
+                  };
+                });
+                setTimeout(doPrint, 1000);
+              }
+            }
+            if (document.readyState === 'complete') {
+              triggerPrint();
+            } else {
+              window.onload = triggerPrint;
+            }
+          </script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } else {
+      printReportHtmlViaIframe(studentHtmls, `Selected Terminal Reports (${selectedStudents.length} Candidates)`);
+    }
+  } catch {
+    printReportHtmlViaIframe(studentHtmls, `Selected Terminal Reports (${selectedStudents.length} Candidates)`);
   }
 };
 
 // Print all class report sheets in one continuous batch with clean page breaks
-export const printBulkReportSheets = (students: Student[]) => {
-  return printSelectedReportSheets(students);
+export const printBulkReportSheets = (
+  students: Student[],
+  getSubjects?: (student: Student) => SubjectMark[]
+) => {
+  return printSelectedReportSheets(students, getSubjects);
 };
+
+/**
+ * Generates raw CSV formatted string for all student records
+ */
+export const generateStudentsRecordsCsvString = (
+  students: Student[],
+  includeBom: boolean = false
+): string => {
+  const headers = [
+    'Admission No',
+    'First Name',
+    'Last Name',
+    'Full Name',
+    'Gender',
+    'Class',
+    'Arm',
+    'Stream',
+    'House',
+    'Academic Session',
+    'Term',
+    'Age',
+    'Position in Class',
+    'Total in Class',
+    'Attendance Rate',
+    'Fee Balance (NGN)',
+    'Total Term Fees (NGN)',
+    'Fee Payment Status',
+    'Guardian Name',
+    'Guardian Phone',
+    'Guardian Email',
+    'Enrollment Status',
+    'Registered Subjects Count',
+    'Registered Subjects List'
+  ];
+
+  const escapeCsv = (val: any): string => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const rows = students.map((st) => {
+    const subjects = getSubjectsForClass(st.formClass, st.arm);
+    const feeStatus = (st.feeBalance || 0) <= 0 ? 'Fully Paid' : 'Outstanding Balance';
+
+    return [
+      escapeCsv(st.studentNo),
+      escapeCsv(st.firstName),
+      escapeCsv(st.lastName),
+      escapeCsv(`${st.firstName} ${st.lastName}`),
+      escapeCsv(st.gender),
+      escapeCsv(st.formClass),
+      escapeCsv(st.arm || 'General'),
+      escapeCsv(st.stream || `${st.arm || 'General'} Stream`),
+      escapeCsv(st.house || 'Dalet'),
+      escapeCsv(st.session || '2026/2027'),
+      escapeCsv(st.term || 'Second Term'),
+      escapeCsv(st.age || 15),
+      escapeCsv(st.positionInClass || '-'),
+      escapeCsv(st.noInClass || 45),
+      escapeCsv(st.attendanceRate ? `${st.attendanceRate}%` : '100%'),
+      escapeCsv(st.feeBalance ?? 0),
+      escapeCsv(st.totalFees ?? 380000),
+      escapeCsv(feeStatus),
+      escapeCsv(st.guardianName || ''),
+      escapeCsv(st.guardianPhone || ''),
+      escapeCsv(st.guardianEmail || ''),
+      escapeCsv(st.status || 'Active'),
+      escapeCsv(subjects.length),
+      escapeCsv(subjects.join('; '))
+    ].join(',');
+  });
+
+  const body = [headers.join(','), ...rows].join('\r\n');
+  return includeBom ? '\uFEFF' + body : body;
+};
+
+/**
+ * Downloads comprehensive records of all students in CSV format
+ * including admission numbers, names, classes, arms, guardians, financial status, and registered subjects.
+ */
+export const downloadAllStudentsRecordsCsv = (
+  students: Student[],
+  customFileName?: string
+): void => {
+  const csvContent = generateStudentsRecordsCsvString(students, true);
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  const fileName = customFileName || `NDASSS_All_Students_Records_${new Date().toISOString().split('T')[0]}.csv`;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Prints the entire student records roster in an official, high-resolution tabular document
+ * using an invisible print iframe that works reliably across all browsers and iframe contexts.
+ */
+export const printAllStudentsRecordsTable = (
+  students: Student[],
+  title: string = 'NDASSS All Students Roster & Academic Registry'
+): void => {
+  const printIframe = document.createElement('iframe');
+  printIframe.style.position = 'fixed';
+  printIframe.style.right = '0';
+  printIframe.style.bottom = '0';
+  printIframe.style.width = '0';
+  printIframe.style.height = '0';
+  printIframe.style.border = '0';
+  document.body.appendChild(printIframe);
+
+  const rowsHtml = students.map((st, idx) => {
+    const subjects = getSubjectsForClass(st.formClass, st.arm);
+    const feeStatus = (st.feeBalance || 0) <= 0 ? 'Fully Paid' : 'Outstanding Balance';
+    const feeStatusColor = (st.feeBalance || 0) <= 0 ? '#166534' : '#991b1b';
+
+    return `
+      <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+        <td style="padding: 6px 8px; text-align: center; font-weight: bold; color: #64748b;">${idx + 1}</td>
+        <td style="padding: 6px 8px; font-weight: bold; font-family: monospace; color: #0f172a;">${st.studentNo}</td>
+        <td style="padding: 6px 8px; font-weight: 600; color: #1e293b;">${st.firstName} ${st.lastName}</td>
+        <td style="padding: 6px 8px; text-align: center;">${st.gender || 'M'}</td>
+        <td style="padding: 6px 8px; font-weight: bold; color: #0369a1;">${st.formClass} ${st.arm ? `(${st.arm})` : ''}</td>
+        <td style="padding: 6px 8px; color: #475569;">${st.stream || 'Standard'}</td>
+        <td style="padding: 6px 8px; color: #334155;">
+          <strong>${subjects.length} Subjects:</strong><br/>
+          <span style="color: #64748b; font-size: 10px;">${subjects.slice(0, 5).join(', ')}${subjects.length > 5 ? ` +${subjects.length - 5} more` : ''}</span>
+        </td>
+        <td style="padding: 6px 8px; color: #475569;">
+          <div>${st.guardianName || 'Parent / Guardian'}</div>
+          <div style="font-size: 10px; color: #64748b;">${st.guardianPhone || '-'}</div>
+        </td>
+        <td style="padding: 6px 8px; text-align: right; font-weight: bold; color: ${feeStatusColor};">
+          <div>${feeStatus}</div>
+          <div style="font-size: 10px; color: #64748b;">Bal: ₦${(st.feeBalance || 0).toLocaleString()}</div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>${title}</title>
+      <meta charset="utf-8" />
+      <style>
+        @page {
+          size: A4 landscape;
+          margin: 10mm 10mm 10mm 10mm;
+        }
+        body {
+          margin: 0;
+          padding: 16px;
+          background: #ffffff;
+          color: #0f172a;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 12px;
+        }
+        th {
+          background-color: #0f172a;
+          color: #ffffff;
+          padding: 8px;
+          font-size: 11px;
+          text-align: left;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        tr:nth-child(even) {
+          background-color: #f8fafc;
+        }
+        @media print {
+          body { padding: 0; }
+          .no-print { display: none !important; }
+        }
+      </style>
+    </head>
+    <body>
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 12px;">
+        <div>
+          <div style="font-size: 18px; font-weight: 900; letter-spacing: 0.05em; color: #0f172a; text-transform: uppercase;">
+            Nigerian Defence Academy Secondary School
+          </div>
+          <div style="font-size: 12px; font-weight: bold; color: #0284c7; text-transform: uppercase; margin-top: 2px;">
+            Official Comprehensive Student Registry & Curriculum Subject Allocation
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+            Permanent Site, Ribadu Campus, Kaduna, Nigeria • Verified Academic Roster
+          </div>
+        </div>
+        <div style="text-align: right; font-size: 11px; color: #475569;">
+          <div><strong>Total Enrolled Students:</strong> ${students.length}</div>
+          <div><strong>Academic Session:</strong> 2026/2027 • Second Term</div>
+          <div><strong>Export Date:</strong> ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align: center; width: 30px;">#</th>
+            <th style="width: 130px;">Admission No</th>
+            <th style="width: 160px;">Full Name</th>
+            <th style="text-align: center; width: 40px;">Sex</th>
+            <th style="width: 80px;">Class</th>
+            <th style="width: 100px;">Stream</th>
+            <th>Registered Subjects</th>
+            <th style="width: 160px;">Guardian Info</th>
+            <th style="text-align: right; width: 130px;">Financial Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+
+      <div style="margin-top: 18px; display: flex; justify-content: space-between; font-size: 10px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 8px;">
+        <div>NDASSS Management System • Confidential Student Records</div>
+        <div>Page 1 of 1 • System Generated Registry</div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  if (printIframe.contentDocument) {
+    printIframe.contentDocument.open();
+    printIframe.contentDocument.write(htmlContent);
+    printIframe.contentDocument.close();
+
+    setTimeout(() => {
+      printIframe.contentWindow?.focus();
+      printIframe.contentWindow?.print();
+      setTimeout(() => {
+        if (printIframe.parentNode) {
+          document.body.removeChild(printIframe);
+        }
+      }, 2000);
+    }, 400);
+  }
+};
+
+/**
+ * Prints raw CSV content of all students records with monospaced tabular styling
+ */
+export const printAllStudentsRecordsCsvText = (
+  students: Student[],
+  title: string = 'NDASSS Student Records Raw CSV Export'
+): void => {
+  const csvText = generateStudentsRecordsCsvString(students, false);
+  const printIframe = document.createElement('iframe');
+  printIframe.style.position = 'fixed';
+  printIframe.style.right = '0';
+  printIframe.style.bottom = '0';
+  printIframe.style.width = '0';
+  printIframe.style.height = '0';
+  printIframe.style.border = '0';
+  document.body.appendChild(printIframe);
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>${title}</title>
+      <meta charset="utf-8" />
+      <style>
+        @page {
+          size: A4 landscape;
+          margin: 8mm 8mm 8mm 8mm;
+        }
+        body {
+          margin: 0;
+          padding: 16px;
+          background: #ffffff;
+          color: #0f172a;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          font-size: 9px;
+          line-height: 1.4;
+        }
+        pre {
+          white-space: pre-wrap;
+          word-break: break-all;
+          background: #f8fafc;
+          border: 1px solid #cbd5e1;
+          padding: 12px;
+          border-radius: 4px;
+        }
+        .header {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          margin-bottom: 12px;
+          border-bottom: 2px solid #0f172a;
+          padding-bottom: 8px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div style="font-size: 16px; font-weight: bold;">NIGERIAN DEFENCE ACADEMY SECONDARY SCHOOL (NDASSS)</div>
+        <div style="font-size: 12px; color: #475569;">CSV RECORDS EXPORT • ${students.length} Total Student Profiles • Printed on ${new Date().toLocaleString()}</div>
+      </div>
+      <pre>${csvText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+    </body>
+    </html>
+  `;
+
+  if (printIframe.contentDocument) {
+    printIframe.contentDocument.open();
+    printIframe.contentDocument.write(htmlContent);
+    printIframe.contentDocument.close();
+
+    setTimeout(() => {
+      printIframe.contentWindow?.focus();
+      printIframe.contentWindow?.print();
+      setTimeout(() => {
+        if (printIframe.parentNode) {
+          document.body.removeChild(printIframe);
+        }
+      }, 2000);
+    }, 400);
+  }
+};
+

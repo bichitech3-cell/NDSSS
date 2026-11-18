@@ -40,7 +40,7 @@ export const RecoverPasswordModal: React.FC<RecoverPasswordModalProps> = ({ isOp
         onClick={(e) => e.stopPropagation()}
         style={{ width: 'min(92vw, 470px)' }}
       >
-        <div className="modal-header-fecomas">
+        <div className="modal-header-bichitech">
           <div className="flex items-center gap-2">
             <i className="fas fa-key text-yellow-400 text-lg mr-1"></i>
             <h5 className="m-0 font-bold text-white text-base tracking-wide">
@@ -133,13 +133,13 @@ export const RecoverPasswordModal: React.FC<RecoverPasswordModalProps> = ({ isOp
               <div className="pt-3 border-t border-slate-200 mt-4 text-center">
                 <p className="text-xs text-slate-500 mb-2">Need immediate assistance with your account?</p>
                 <a
-                  href="https://wa.me/265993189671?text=Hello%20FECOMAS%20Support,%20I%20need%20assistance%20recovering%20my%20school%20portal%20password."
+                  href="https://wa.me/265993189671?text=Hello%20Bichitech%20Support,%20I%20need%20assistance%20recovering%20my%20school%20portal%20password."
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-xs font-bold text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 px-3.5 py-2 rounded-xl transition-colors"
                 >
                   <i className="fab fa-whatsapp text-sm text-green-600"></i>
-                  WhatsApp Fecomas Technical Support
+                  WhatsApp Bichitech Technical Support
                 </a>
               </div>
             </form>

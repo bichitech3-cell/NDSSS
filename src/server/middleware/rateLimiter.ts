@@ -63,7 +63,7 @@ export const createRateLimiter = (options: RateLimitOptions) => {
 // - Login: 5 requests per 15 minutes per IP
 // - Signup: 3 requests per 1 hour per IP
 // - Password Reset: 3 requests per 1 hour per IP/Email
-// - Paid APIs (Gemini AI / Stripe checkout / PDF batch): 20 requests per minute
+// - Paid APIs (Gemini AI / Batch Services): 20 requests per minute
 // -----------------------------------------------------------------------------
 
 export const loginLimiter = createRateLimiter({
